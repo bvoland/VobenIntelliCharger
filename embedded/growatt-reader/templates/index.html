@@ -1,0 +1,1092 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Growatt Inverter Reader</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  </head>
+  <body>
+    <main class="layout">
+      <section class="hero">
+        <p class="eyebrow">Netzwerkdiagnose</p>
+        <h1>Growatt Logger Zugriff vorbereiten</h1>
+        <p class="lead">
+          Diese erste Version prueft, ob der Webserver den
+          <code>usr-dr302</code> im Netzwerk erreicht. Sobald der Wechselrichter
+          angeschlossen ist, erweitern wir denselben Dienst um die eigentlichen
+          Growatt-Datenpunkte.
+        </p>
+        <div class="hero-note">
+          Diese Seite laedt immer ohne Browser-Cache neu. Falls du die alte Ansicht
+          gesehen hast, einfach einmal die Seite neu laden.
+        </div>
+      </section>
+
+      <section class="panel collapsible-panel">
+        <h2>Aktuelle Zielverbindung</h2>
+        <dl class="config-grid">
+          <div>
+            <dt>Host</dt>
+            <dd>{{ serial_host }}</dd>
+          </div>
+          <div>
+            <dt>Port</dt>
+            <dd>{{ serial_port }}</dd>
+          </div>
+          <div>
+            <dt>Timeout</dt>
+            <dd>{{ serial_timeout }} s</dd>
+          </div>
+        </dl>
+
+        <div class="form-grid">
+          <label>
+            <span>Host</span>
+            <input id="host-input" type="text" value="{{ serial_host }}">
+          </label>
+          <label>
+            <span>Port</span>
+            <input id="port-input" type="number" min="1" max="65535" value="{{ serial_port }}">
+          </label>
+          <label>
+            <span>Timeout (s)</span>
+            <input id="timeout-input" type="number" min="0.1" step="0.1" value="{{ serial_timeout }}">
+          </label>
+        </div>
+
+        <button id="probe-button" type="button">Verbindung testen</button>
+
+        <div id="status-card" class="status-card neutral">
+          <strong>Status:</strong>
+          <span id="status-text">Noch kein Test ausgefuehrt.</span>
+        </div>
+
+        <pre id="status-json" class="json-output">Warte auf Test...</pre>
+      </section>
+
+      <section class="panel collapsible-panel" data-default-collapsed="true">
+        <h2>Naechster Schritt</h2>
+        <p>
+          Wenn diese Verbindung klappt, koennen wir als Nächstes das
+          serielle Protokoll des Loggers anbinden und anschliessend
+          Live-Werte wie Leistung, Einspeisung und Betriebszustand
+          sichtbar machen.
+        </p>
+      </section>
+
+      <section class="panel collapsible-panel">
+        <h2>Live Uebersicht</h2>
+        <p class="lead small">
+          Diese Ansicht dekodiert die wichtigsten offiziellen Growatt-Register.
+          Fuer Nulleinspeisung zeigen wir sowohl offizielle Limit-Register als auch
+          eine abgeleitete Schaetzung der momentanen Abregelung.
+        </p>
+
+        <div class="button-row">
+          <button id="overview-button" type="button">Live-Werte laden</button>
+        </div>
+
+        <div id="overview-status-card" class="status-card neutral">
+          <strong>Uebersicht:</strong>
+          <span id="overview-status-text">Noch keine Live-Daten geladen.</span>
+        </div>
+
+        <div id="overview-grid" class="overview-grid"></div>
+        <div id="candidate-grid" class="candidate-grid"></div>
+        <pre id="overview-json" class="json-output">Warte auf Live-Werte...</pre>
+      </section>
+
+      <section class="panel collapsible-panel" data-default-collapsed="true">
+        <h2>Register Explorer</h2>
+        <p class="lead small">
+          Liest die relevanten dokumentierten Registerbereiche komplett aus und zeigt
+          bekannte Register mit Namen, Skalierung und dekodiertem Wert. Damit koennen
+          wir gezielt nach dem richtigen Zero-Export-, Batterie- oder Netzfluss-Register suchen.
+        </p>
+
+        <div class="button-row">
+          <button id="register-explorer-button" type="button">Alle Register laden</button>
+        </div>
+
+        <div id="register-explorer-status-card" class="status-card neutral">
+          <strong>Explorer:</strong>
+          <span id="register-explorer-status-text">Noch keine Register geladen.</span>
+        </div>
+
+        <div id="register-table" class="register-table"></div>
+        <pre id="register-json" class="json-output">Warte auf Registerdaten...</pre>
+      </section>
+
+      <section class="panel collapsible-panel" data-default-collapsed="true">
+        <h2>Daueraufzeichnung</h2>
+        <p class="lead small">
+          Der Logger kann komplette Register-Snapshots im Hintergrund speichern.
+          Hier siehst du Status, Start/Stop und die zuletzt gespeicherten Eintraege.
+        </p>
+
+        <div class="form-grid">
+          <label>
+            <span>Poll-Intervall (s)</span>
+            <input id="logger-interval-input" type="number" min="5" max="3600" step="1" value="60">
+          </label>
+        </div>
+
+        <div class="button-row">
+          <button id="logger-apply-interval-button" type="button" class="secondary">Intervall uebernehmen</button>
+          <button id="logger-status-button" type="button">Logger Status laden</button>
+          <button id="logger-start-button" type="button">Logger starten</button>
+          <button id="logger-stop-button" type="button" class="danger">Logger stoppen</button>
+          <button id="logger-recent-button" type="button" class="secondary">Letzte Snapshots laden</button>
+        </div>
+
+        <div id="logger-status-card" class="status-card neutral">
+          <strong>Logger:</strong>
+          <span id="logger-status-text">Noch kein Logger-Status geladen.</span>
+        </div>
+
+        <div id="logger-meta" class="progress-meta">Noch keine Logger-Metadaten geladen.</div>
+        <div id="logger-table" class="register-table"></div>
+        <pre id="logger-json" class="json-output">Warte auf Logger-Daten...</pre>
+      </section>
+
+      <section class="panel collapsible-panel" data-default-collapsed="true">
+        <h2>Verlauf und Vergleich</h2>
+        <p class="lead small">
+          Waehle einen Zeitraum und mehrere Datenpunkte aus, um den Logger-Verlauf
+          direkt zu vergleichen. Die Zeitreihe nutzt die gespeicherten Snapshots aus
+          der lokalen Datenbank.
+        </p>
+
+        <div class="form-grid">
+          <label>
+            <span>Von</span>
+            <input id="history-start-input" type="datetime-local">
+          </label>
+          <label>
+            <span>Bis</span>
+            <input id="history-end-input" type="datetime-local">
+          </label>
+          <label>
+            <span>Max. Punkte</span>
+            <input id="history-limit-input" type="number" min="10" max="10000" step="10" value="2000">
+          </label>
+        </div>
+
+        <div id="history-field-picker" class="history-field-picker"></div>
+
+        <div class="button-row">
+          <button id="history-load-button" type="button">Verlauf laden</button>
+        </div>
+
+        <div id="history-status-card" class="status-card neutral">
+          <strong>Verlauf:</strong>
+          <span id="history-status-text">Noch keine Verlaufsdaten geladen.</span>
+        </div>
+
+        <div id="history-meta" class="progress-meta">Noch keine Verlaufsdaten geladen.</div>
+        <div id="history-chart" class="history-chart-list"></div>
+        <pre id="history-json" class="json-output">Warte auf Verlaufsdaten...</pre>
+      </section>
+
+      <section class="panel collapsible-panel" data-default-collapsed="true">
+        <h2>Modbus Diagnose</h2>
+        <p class="lead small">
+          Damit testen wir die eigentliche Register-Kommunikation hinter dem
+          TCP-Gateway. Sobald der Wechselrichter am RS485-Bus haengt, koennen
+          wir hier Unit-ID und Register direkt pruefen.
+        </p>
+
+        <div class="form-grid">
+          <label>
+            <span>Unit-ID</span>
+            <input id="unit-id-input" type="number" min="1" max="247" value="{{ modbus_unit_id }}">
+          </label>
+          <label>
+            <span>Registertyp</span>
+            <select id="register-type-input">
+              <option value="input">Input Register</option>
+              <option value="holding">Holding Register</option>
+            </select>
+          </label>
+          <label>
+            <span>Adresse</span>
+            <input id="address-input" type="number" min="0" max="65535" value="{{ modbus_probe_address }}">
+          </label>
+          <label>
+            <span>Anzahl</span>
+            <input id="count-input" type="number" min="1" max="125" value="{{ modbus_probe_count }}">
+          </label>
+        </div>
+
+        <div class="button-row">
+          <button id="modbus-read-button" type="button">Register lesen</button>
+          <button id="modbus-scan-button" type="button" class="secondary">Unit-IDs 1-5 pruefen</button>
+          <button id="modbus-stop-button" type="button" class="danger">Modbus-Job stoppen</button>
+        </div>
+
+        <div id="modbus-status-card" class="status-card neutral">
+          <strong>Modbus:</strong>
+          <span id="modbus-status-text">Noch kein Modbus-Test ausgefuehrt.</span>
+        </div>
+
+        <div id="modbus-progress" class="progress-meta">Noch kein laufender Modbus-Job.</div>
+
+        <pre id="modbus-json" class="json-output">Warte auf Modbus-Test...</pre>
+      </section>
+
+      <section class="panel collapsible-panel" data-default-collapsed="true">
+        <h2>Discovery Mode</h2>
+        <p class="lead small">
+          Dieser Modus sucht lesend nach antwortenden Geraeten und Registerbloecken.
+          Er schreibt nichts ins Geraet. Gescannt werden Unit-IDs und Adressbereiche
+          in Bloecken, damit die Abfrage auf RS485 stabil bleibt.
+        </p>
+
+        <div class="form-grid">
+          <label>
+            <span>Start Unit-ID</span>
+            <input id="discovery-start-unit-input" type="number" min="1" max="247" value="1">
+          </label>
+          <label>
+            <span>End Unit-ID</span>
+            <input id="discovery-end-unit-input" type="number" min="1" max="247" value="5">
+          </label>
+          <label>
+            <span>Registertyp</span>
+            <select id="discovery-register-type-input">
+              <option value="input">Input Register</option>
+              <option value="holding">Holding Register</option>
+            </select>
+          </label>
+          <label>
+            <span>Startadresse</span>
+            <input id="discovery-start-address-input" type="number" min="0" max="65535" value="0">
+          </label>
+          <label>
+            <span>Endadresse</span>
+            <input id="discovery-end-address-input" type="number" min="0" max="65535" value="50">
+          </label>
+          <label>
+            <span>Blockgroesse</span>
+            <input id="discovery-block-size-input" type="number" min="1" max="125" value="10">
+          </label>
+        </div>
+
+        <div class="button-row">
+          <button id="discovery-button" type="button">Discovery starten</button>
+          <button id="discovery-stop-button" type="button" class="danger">Discovery stoppen</button>
+        </div>
+
+        <div id="discovery-status-card" class="status-card neutral">
+          <strong>Discovery:</strong>
+          <span id="discovery-status-text">Noch kein Discovery-Lauf gestartet.</span>
+        </div>
+
+        <div id="discovery-progress" class="progress-meta">Noch kein laufender Discovery-Job.</div>
+
+        <pre id="discovery-json" class="json-output">Warte auf Discovery-Lauf...</pre>
+      </section>
+    </main>
+
+    <script>
+      const probeButton = document.getElementById("probe-button");
+      const hostInput = document.getElementById("host-input");
+      const portInput = document.getElementById("port-input");
+      const timeoutInput = document.getElementById("timeout-input");
+      const statusCard = document.getElementById("status-card");
+      const statusText = document.getElementById("status-text");
+      const statusJson = document.getElementById("status-json");
+      const unitIdInput = document.getElementById("unit-id-input");
+      const registerTypeInput = document.getElementById("register-type-input");
+      const addressInput = document.getElementById("address-input");
+      const countInput = document.getElementById("count-input");
+      const modbusReadButton = document.getElementById("modbus-read-button");
+      const modbusScanButton = document.getElementById("modbus-scan-button");
+      const modbusStopButton = document.getElementById("modbus-stop-button");
+      const modbusStatusCard = document.getElementById("modbus-status-card");
+      const modbusStatusText = document.getElementById("modbus-status-text");
+      const modbusProgress = document.getElementById("modbus-progress");
+      const modbusJson = document.getElementById("modbus-json");
+      const discoveryStartUnitInput = document.getElementById("discovery-start-unit-input");
+      const discoveryEndUnitInput = document.getElementById("discovery-end-unit-input");
+      const discoveryRegisterTypeInput = document.getElementById("discovery-register-type-input");
+      const discoveryStartAddressInput = document.getElementById("discovery-start-address-input");
+      const discoveryEndAddressInput = document.getElementById("discovery-end-address-input");
+      const discoveryBlockSizeInput = document.getElementById("discovery-block-size-input");
+      const discoveryButton = document.getElementById("discovery-button");
+      const discoveryStopButton = document.getElementById("discovery-stop-button");
+      const discoveryStatusCard = document.getElementById("discovery-status-card");
+      const discoveryStatusText = document.getElementById("discovery-status-text");
+      const discoveryProgress = document.getElementById("discovery-progress");
+      const discoveryJson = document.getElementById("discovery-json");
+      const overviewButton = document.getElementById("overview-button");
+      const overviewStatusCard = document.getElementById("overview-status-card");
+      const overviewStatusText = document.getElementById("overview-status-text");
+      const overviewGrid = document.getElementById("overview-grid");
+      const candidateGrid = document.getElementById("candidate-grid");
+      const overviewJson = document.getElementById("overview-json");
+      const registerExplorerButton = document.getElementById("register-explorer-button");
+      const registerExplorerStatusCard = document.getElementById("register-explorer-status-card");
+      const registerExplorerStatusText = document.getElementById("register-explorer-status-text");
+      const registerTable = document.getElementById("register-table");
+      const registerJson = document.getElementById("register-json");
+      const loggerStatusButton = document.getElementById("logger-status-button");
+      const loggerApplyIntervalButton = document.getElementById("logger-apply-interval-button");
+      const loggerStartButton = document.getElementById("logger-start-button");
+      const loggerStopButton = document.getElementById("logger-stop-button");
+      const loggerRecentButton = document.getElementById("logger-recent-button");
+      const loggerIntervalInput = document.getElementById("logger-interval-input");
+      const loggerStatusCard = document.getElementById("logger-status-card");
+      const loggerStatusText = document.getElementById("logger-status-text");
+      const loggerMeta = document.getElementById("logger-meta");
+      const loggerTable = document.getElementById("logger-table");
+      const loggerJson = document.getElementById("logger-json");
+      const historyStartInput = document.getElementById("history-start-input");
+      const historyEndInput = document.getElementById("history-end-input");
+      const historyLimitInput = document.getElementById("history-limit-input");
+      const historyFieldPicker = document.getElementById("history-field-picker");
+      const historyLoadButton = document.getElementById("history-load-button");
+      const historyStatusCard = document.getElementById("history-status-card");
+      const historyStatusText = document.getElementById("history-status-text");
+      const historyMeta = document.getElementById("history-meta");
+      const historyChart = document.getElementById("history-chart");
+      const historyJson = document.getElementById("history-json");
+      let modbusJobId = null;
+      let discoveryJobId = null;
+      const historyFieldDefinitions = {
+        pv_total_power_w: { label: "PV Gesamt", unit: "W", defaultSelected: true, color: "#c65d2e" },
+        ac_total_power_w: { label: "AC Gesamt", unit: "W", defaultSelected: true, color: "#355c7d" },
+        load_power_w: { label: "Load Power", unit: "W", defaultSelected: true, color: "#2d7b52" },
+        import_from_grid_w: { label: "Import from Grid", unit: "W", defaultSelected: true, color: "#8f3d1b" },
+        export_to_grid_w: { label: "Export to Grid", unit: "W", defaultSelected: false, color: "#7b6dd6" },
+        battery_charge_power_w: { label: "Batterie laedt", unit: "W", defaultSelected: true, color: "#3c8f60" },
+        battery_discharge_power_w: { label: "Batterie entlaedt", unit: "W", defaultSelected: true, color: "#d36b2d" },
+        battery_net_power_w: { label: "Netto Batteriefluss", unit: "W", defaultSelected: false, color: "#5b4b8a" },
+        battery_soc_percent: { label: "SOC", unit: "%", defaultSelected: true, color: "#00838f" },
+        battery_voltage_v: { label: "Batterie Spannung", unit: "V", defaultSelected: false, color: "#5d6d7e" },
+        battery_current_a: { label: "Batterie Strom", unit: "A", defaultSelected: false, color: "#9b59b6" },
+        curtailed_power_estimate_w: { label: "Abregelung geschaetzt", unit: "W", defaultSelected: false, color: "#b5432a" },
+        limited_output_power_w: { label: "Leistungslimit Laufzeit", unit: "W", defaultSelected: false, color: "#4d648d" }
+      };
+
+      function setupCollapsiblePanels() {
+        const panels = document.querySelectorAll(".collapsible-panel");
+        panels.forEach((panel) => {
+          const heading = panel.querySelector("h2");
+          if (!heading || panel.querySelector(".panel-header")) {
+            return;
+          }
+
+          const body = document.createElement("div");
+          body.className = "panel-body";
+
+          const nodesToMove = [];
+          let sibling = heading.nextSibling;
+          while (sibling) {
+            const nextSibling = sibling.nextSibling;
+            nodesToMove.push(sibling);
+            sibling = nextSibling;
+          }
+          nodesToMove.forEach((node) => body.appendChild(node));
+
+          const header = document.createElement("div");
+          header.className = "panel-header";
+
+          const toggle = document.createElement("button");
+          toggle.type = "button";
+          toggle.className = "secondary panel-toggle";
+
+          heading.remove();
+          header.appendChild(heading);
+          header.appendChild(toggle);
+          panel.appendChild(header);
+          panel.appendChild(body);
+
+          const setCollapsedState = (collapsed) => {
+            panel.dataset.collapsed = collapsed ? "true" : "false";
+            body.hidden = collapsed;
+            toggle.textContent = collapsed ? "Ausklappen" : "Einklappen";
+            toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+          };
+
+          setCollapsedState(panel.dataset.defaultCollapsed === "true");
+          toggle.addEventListener("click", () => {
+            setCollapsedState(panel.dataset.collapsed !== "true");
+          });
+        });
+      }
+
+      function setState(state, text) {
+        statusCard.className = `status-card ${state}`;
+        statusText.textContent = text;
+      }
+
+      function setModbusState(state, text) {
+        modbusStatusCard.className = `status-card ${state}`;
+        modbusStatusText.textContent = text;
+      }
+
+      function setDiscoveryState(state, text) {
+        discoveryStatusCard.className = `status-card ${state}`;
+        discoveryStatusText.textContent = text;
+      }
+
+      function setOverviewState(state, text) {
+        overviewStatusCard.className = `status-card ${state}`;
+        overviewStatusText.textContent = text;
+      }
+
+      function setRegisterExplorerState(state, text) {
+        registerExplorerStatusCard.className = `status-card ${state}`;
+        registerExplorerStatusText.textContent = text;
+      }
+
+      function setLoggerState(state, text) {
+        loggerStatusCard.className = `status-card ${state}`;
+        loggerStatusText.textContent = text;
+      }
+
+      function setHistoryState(state, text) {
+        historyStatusCard.className = `status-card ${state}`;
+        historyStatusText.textContent = text;
+      }
+
+      function renderOverviewCard(title, value, note = "") {
+        return `
+          <article class="overview-card">
+            <h3>${title}</h3>
+            <div class="overview-value">${value}</div>
+            ${note ? `<p>${note}</p>` : ""}
+          </article>
+        `;
+      }
+
+      function renderCandidateCard(title, value, note = "") {
+        return `
+          <article class="candidate-card">
+            <h3>${title}</h3>
+            <div class="candidate-value">${value}</div>
+            ${note ? `<p>${note}</p>` : ""}
+          </article>
+        `;
+      }
+
+      function renderOverview(payload) {
+        const live = payload.live;
+        const battery = payload.battery;
+        const zeroExport = payload.zero_export;
+        const candidates = battery.candidate_registers || {};
+        const batteryModeMap = {
+          charging: "Batterie laedt",
+          discharging: "Batterie entlaedt",
+          idle: "Batterie neutral"
+        };
+        const batteryMode = batteryModeMap[battery.flow_state] || battery.flow_state || "unbekannt";
+        const batteryNetNote = battery.flow_state === "charging"
+          ? "negativ = Ladung"
+          : battery.flow_state === "discharging"
+            ? "positiv = Entladung"
+            : "kein signifikanter Batteriefluss";
+
+        overviewGrid.innerHTML = [
+          renderOverviewCard("Status", live.status_text, `Code ${live.status_code}`),
+          renderOverviewCard("PV Gesamt", `${live.pv_total_power_w.toFixed(1)} W`),
+          renderOverviewCard("AC Gesamt", `${live.ac_total_power_w.toFixed(1)} W`),
+          renderOverviewCard("Batterie Modus", batteryMode, `BMS Status ${battery.bms_status}`),
+          renderOverviewCard("Batterie entlaedt", `${battery.discharge_power_w.toFixed(1)} W`, "Kandidat 3178-3179"),
+          renderOverviewCard("Batterie laedt", `${battery.charge_power_w.toFixed(1)} W`, "Kandidat 3180-3181"),
+          renderOverviewCard("Netto Batteriefluss", `${battery.battery_power_w.toFixed(1)} W`, batteryNetNote),
+          renderOverviewCard("Batterie Spannung", `${battery.battery_voltage_v.toFixed(1)} V`),
+          renderOverviewCard("Batterie Strom", `${battery.battery_current_a.toFixed(1)} A`, "Vorzeichen noch nicht final bestaetigt"),
+          renderOverviewCard("Load Power", `${live.estimated_load_power_w.toFixed(1)} W`, live.grid_power_direction_note),
+          renderOverviewCard("Import from Grid", `${live.estimated_import_from_grid_w.toFixed(1)} W`, live.grid_power_direction_note),
+          renderOverviewCard("Export to Grid", `${live.estimated_export_to_grid_w.toFixed(1)} W`, live.grid_power_direction_note),
+          renderOverviewCard("Netzfrequenz", `${live.grid_frequency_hz.toFixed(2)} Hz`),
+          renderOverviewCard("Nulleinspeisung Limit", zeroExport.official_limit_register.configured_percent === null ? "unbegrenzt" : `${zeroExport.official_limit_register.configured_percent} %`),
+          renderOverviewCard("Abregelung geschaetzt", `${zeroExport.curtailment_estimate_w.toFixed(1)} W`, "Schaetzung aus PV, AC und Batterieladung"),
+          renderOverviewCard("SOC", `${battery.bms_soc_percent.toFixed(2)} %`)
+        ].join("");
+
+        candidateGrid.innerHTML = [
+          renderCandidateCard(
+            "Reg 3166",
+            `${candidates.battery_3166?.raw ?? "-"}${candidates.battery_3166?.hex ? ` (${candidates.battery_3166.hex})` : ""}`,
+            "Statuswort, bisher vor allem 257 / 513"
+          ),
+          renderCandidateCard(
+            "Reg 3212",
+            `${candidates.battery_3212?.raw ?? "-"}`,
+            "BMS-/Freigabestatus, bisher 1 oder 4"
+          ),
+          renderCandidateCard(
+            "Reg 3178/3179",
+            `${candidates.battery_3178_3179?.raw_high ?? "-"}/${candidates.battery_3178_3179?.raw_low ?? "-"} -> ${candidates.battery_3178_3179?.scaled_w?.toFixed ? candidates.battery_3178_3179.scaled_w.toFixed(1) : "-"} W`,
+            "Entlade-Kandidat, sehr wahrscheinlich Skala /10"
+          ),
+          renderCandidateCard(
+            "Reg 3180/3181",
+            `${candidates.battery_3180_3181?.raw_high ?? "-"}/${candidates.battery_3180_3181?.raw_low ?? "-"} -> ${candidates.battery_3180_3181?.scaled_w?.toFixed ? candidates.battery_3180_3181.scaled_w.toFixed(1) : "-"} W`,
+            "Lade-Kandidat, sehr wahrscheinlich Skala /10"
+          ),
+          renderCandidateCard(
+            "Reg 201-203",
+            `${candidates.input_201?.raw ?? "-"}/${candidates.input_202?.raw ?? "-"}/${candidates.input_203?.raw ?? "-"}`,
+            "Kandidat fuer momentane Freigabe oder Abregelungszustand"
+          ),
+          renderCandidateCard(
+            "Reg 231",
+            `${candidates.input_231?.raw ?? "-"}${Number.isFinite(candidates.input_231?.scaled_w_guess) ? ` (~${candidates.input_231.scaled_w_guess.toFixed(1)} W?)` : ""}`,
+            "Korrelierter Leistungs-/Freigabekandidat"
+          ),
+          renderCandidateCard(
+            "Reg 233",
+            `${candidates.input_233?.raw ?? "-"}`,
+            "Korrelierte Groesse, Bedeutung noch offen"
+          )
+        ].join("");
+      }
+
+      function renderRegisterTable(rows) {
+        const interesting = rows.filter(row => row.known || row.raw_value !== 0);
+        const header = `
+          <div class="register-row register-head">
+            <div>Typ</div>
+            <div>Adresse</div>
+            <div>Name</div>
+            <div>Wert</div>
+            <div>Einheit</div>
+            <div>Rohdaten</div>
+          </div>
+        `;
+        const body = interesting.map((row) => `
+          <div class="register-row">
+            <div>${row.register_type}</div>
+            <div>${row.address}</div>
+            <div>${row.name || "-"}</div>
+            <div>${row.decoded_value}</div>
+            <div>${row.unit || "-"}</div>
+            <div>${row.raw_words.join(", ")}</div>
+          </div>
+        `).join("");
+        registerTable.innerHTML = header + body;
+      }
+
+      function renderLoggerTable(rows) {
+        const header = `
+          <div class="register-row register-head">
+            <div>ID</div>
+            <div>Zeit</div>
+            <div>PV</div>
+            <div>AC</div>
+            <div>SOC</div>
+            <div>Status</div>
+          </div>
+        `;
+        const body = rows.map((row) => `
+          <div class="register-row">
+            <div>${row.id}</div>
+            <div>${row.created_at}</div>
+            <div>${row.pv_total_power_w ?? "-"}</div>
+            <div>${row.ac_total_power_w ?? "-"}</div>
+            <div>${row.battery_soc_percent ?? "-"}</div>
+            <div>${row.status_text ?? "-"}</div>
+          </div>
+        `).join("");
+        loggerTable.innerHTML = header + body;
+      }
+
+      function renderProgress(job) {
+        const parts = [];
+        if (job.progress_total > 0) {
+          parts.push(`Fortschritt: ${job.progress_current}/${job.progress_total}`);
+        }
+        if (job.current_unit_id !== null) {
+          parts.push(`Unit-ID: ${job.current_unit_id}`);
+        }
+        if (job.current_address !== null) {
+          parts.push(`Adresse: ${job.current_address}`);
+        }
+        return parts.length > 0 ? parts.join(" | ") : "Kein Fortschritt verfuegbar.";
+      }
+
+      function initializeHistoryDefaults() {
+        const now = new Date();
+        const start = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+        const toLocalDateTimeValue = (value) => {
+          const year = value.getFullYear();
+          const month = String(value.getMonth() + 1).padStart(2, "0");
+          const day = String(value.getDate()).padStart(2, "0");
+          const hours = String(value.getHours()).padStart(2, "0");
+          const minutes = String(value.getMinutes()).padStart(2, "0");
+          return `${year}-${month}-${day}T${hours}:${minutes}`;
+        };
+        historyStartInput.value = toLocalDateTimeValue(start);
+        historyEndInput.value = toLocalDateTimeValue(now);
+      }
+
+      function renderHistoryFieldPicker() {
+        historyFieldPicker.innerHTML = Object.entries(historyFieldDefinitions).map(([key, definition]) => `
+          <label class="history-field-option">
+            <input type="checkbox" value="${key}" ${definition.defaultSelected ? "checked" : ""}>
+            <span class="history-field-swatch" style="background:${definition.color}"></span>
+            <span>${definition.label}</span>
+          </label>
+        `).join("");
+      }
+
+      function getSelectedHistoryFields() {
+        return Array.from(historyFieldPicker.querySelectorAll("input[type='checkbox']:checked"))
+          .map((input) => input.value);
+      }
+
+      function buildHistoryPath(values, width, height, minValue, maxValue) {
+        const filtered = values.map((value, index) => ({ value, index })).filter((entry) => entry.value !== null && entry.value !== undefined);
+        if (filtered.length === 0) {
+          return "";
+        }
+        const span = Math.max(1e-9, maxValue - minValue);
+        return filtered.map((entry, pointIndex) => {
+          const x = filtered.length === 1 ? width / 2 : (entry.index / Math.max(1, values.length - 1)) * width;
+          const y = height - ((entry.value - minValue) / span) * height;
+          return `${pointIndex === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`;
+        }).join(" ");
+      }
+
+      function formatMetricValue(value, unit) {
+        if (value === null || value === undefined) {
+          return "-";
+        }
+        return `${Number(value).toFixed(1)} ${unit}`;
+      }
+
+      function renderHistoryCharts(payload) {
+        historyChart.innerHTML = "";
+        const timestamps = payload.points.map((point) => point.timestamp_local || point.timestamp_utc);
+
+        Object.entries(payload.fields).forEach(([fieldName, definition]) => {
+          const series = payload.points.map((point) => point.values[fieldName]);
+          const numericValues = series.filter((value) => value !== null && value !== undefined).map(Number);
+          const minValue = numericValues.length ? Math.min(...numericValues) : 0;
+          const maxValue = numericValues.length ? Math.max(...numericValues) : 1;
+          const chartWidth = 760;
+          const chartHeight = 110;
+          const color = historyFieldDefinitions[fieldName]?.color || "#355c7d";
+          const path = buildHistoryPath(series, chartWidth, chartHeight, minValue, maxValue === minValue ? minValue + 1 : maxValue);
+          const latestValue = numericValues.length ? numericValues[numericValues.length - 1] : null;
+
+          const article = document.createElement("article");
+          article.className = "history-card";
+          article.innerHTML = `
+            <div class="history-card-header">
+              <div>
+                <h3>${definition.label}</h3>
+                <p>${definition.unit}</p>
+              </div>
+              <div class="history-stats">
+                <span>Min ${formatMetricValue(minValue, definition.unit)}</span>
+                <span>Max ${formatMetricValue(maxValue, definition.unit)}</span>
+                <span>Aktuell ${formatMetricValue(latestValue, definition.unit)}</span>
+              </div>
+            </div>
+            <svg class="history-svg" viewBox="0 0 ${chartWidth} ${chartHeight + 26}" preserveAspectRatio="none" role="img" aria-label="${definition.label}">
+              <line x1="0" y1="${chartHeight}" x2="${chartWidth}" y2="${chartHeight}" class="history-axis"></line>
+              ${path ? `<path d="${path}" fill="none" stroke="${color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"></path>` : ""}
+              <text x="0" y="${chartHeight + 18}" class="history-tick">${timestamps.length ? timestamps[0] : "-"}</text>
+              <text x="${chartWidth}" y="${chartHeight + 18}" text-anchor="end" class="history-tick">${timestamps.length ? timestamps[timestamps.length - 1] : "-"}</text>
+            </svg>
+          `;
+          historyChart.appendChild(article);
+        });
+      }
+
+      async function startBackgroundJob(url, payloadHandler) {
+        const response = await fetch(url, { method: "POST" });
+        const payload = await response.json();
+        if (!response.ok && response.status !== 202) {
+          throw new Error(payload.message || "Job konnte nicht gestartet werden.");
+        }
+        payloadHandler(payload);
+      }
+
+      async function pollJob(jobId, type) {
+        if (!jobId) {
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/jobs/${jobId}`);
+          const payload = await response.json();
+
+          if (type === "modbus") {
+            const state = payload.status === "completed"
+              ? "success"
+              : payload.status === "running"
+                ? "neutral"
+                : payload.status === "stopped"
+                  ? "neutral"
+                  : "error";
+            setModbusState(state, payload.message);
+            modbusProgress.textContent = renderProgress(payload);
+            modbusJson.textContent = JSON.stringify(payload.result || payload, null, 2);
+            if (payload.status !== "running") {
+              modbusJobId = null;
+              return;
+            }
+          }
+
+          if (type === "discovery") {
+            const state = payload.status === "completed"
+              ? "success"
+              : payload.status === "running"
+                ? "neutral"
+                : payload.status === "stopped"
+                  ? "neutral"
+                  : "error";
+            setDiscoveryState(state, payload.message);
+            discoveryProgress.textContent = renderProgress(payload);
+            discoveryJson.textContent = JSON.stringify(payload.result || payload, null, 2);
+            if (payload.status !== "running") {
+              discoveryJobId = null;
+              return;
+            }
+          }
+
+          setTimeout(() => pollJob(jobId, type), 1000);
+        } catch (error) {
+          if (type === "modbus") {
+            setModbusState("error", "Job-Status konnte nicht gelesen werden.");
+          }
+          if (type === "discovery") {
+            setDiscoveryState("error", "Job-Status konnte nicht gelesen werden.");
+          }
+        }
+      }
+
+      async function stopBackgroundJob(jobId, type) {
+        if (!jobId) {
+          return;
+        }
+        const response = await fetch(`/api/jobs/${jobId}/stop`, { method: "POST" });
+        const payload = await response.json();
+        if (type === "modbus") {
+          setModbusState("neutral", payload.message);
+        }
+        if (type === "discovery") {
+          setDiscoveryState("neutral", payload.message);
+        }
+      }
+
+      function buildCommonParams() {
+        return new URLSearchParams({
+          host: hostInput.value.trim(),
+          port: portInput.value.trim(),
+          timeout: timeoutInput.value.trim()
+        });
+      }
+
+      async function probeServer() {
+        setState("neutral", "Verbindung wird getestet...");
+        statusJson.textContent = "Anfrage laeuft...";
+
+        try {
+          const params = buildCommonParams();
+          const response = await fetch(`/api/serial-server/probe?${params.toString()}`);
+          const payload = await response.json();
+
+          setState(
+            payload.connected ? "success" : "error",
+            payload.message
+          );
+          statusJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setState("error", "Webserver konnte die Probe nicht ausfuehren.");
+          statusJson.textContent = JSON.stringify(
+            { connected: false, message: String(error) },
+            null,
+            2
+          );
+        }
+      }
+
+      async function readModbusRegisters() {
+        setModbusState("neutral", "Modbus-Lesevorgang wird gestartet...");
+        modbusProgress.textContent = "Starte Job...";
+        modbusJson.textContent = "Anfrage laeuft...";
+
+        try {
+          const params = buildCommonParams();
+          params.set("unit_id", unitIdInput.value.trim());
+          params.set("register_type", registerTypeInput.value);
+          params.set("address", addressInput.value.trim());
+          params.set("count", countInput.value.trim());
+          await startBackgroundJob(`/api/jobs/modbus-read?${params.toString()}`, (payload) => {
+            modbusJobId = payload.job_id;
+            setModbusState("neutral", payload.message);
+            pollJob(modbusJobId, "modbus");
+          });
+        } catch (error) {
+          setModbusState("error", "Modbus-Test konnte nicht ausgefuehrt werden.");
+          modbusJson.textContent = JSON.stringify(
+            { success: false, message: String(error) },
+            null,
+            2
+          );
+        }
+      }
+
+      async function scanModbusUnits() {
+        setModbusState("neutral", "Unit-ID-Scan wird gestartet...");
+        modbusProgress.textContent = "Starte Job...";
+        modbusJson.textContent = "Anfrage laeuft...";
+
+        try {
+          const params = buildCommonParams();
+          params.set("register_type", registerTypeInput.value);
+          params.set("address", addressInput.value.trim());
+          params.set("count", "1");
+          params.set("start", "1");
+          params.set("end", "5");
+          await startBackgroundJob(`/api/jobs/modbus-scan?${params.toString()}`, (payload) => {
+            modbusJobId = payload.job_id;
+            setModbusState("neutral", payload.message);
+            pollJob(modbusJobId, "modbus");
+          });
+        } catch (error) {
+          setModbusState("error", "Unit-ID-Scan konnte nicht ausgefuehrt werden.");
+          modbusJson.textContent = JSON.stringify(
+            { success: false, message: String(error) },
+            null,
+            2
+          );
+        }
+      }
+
+      async function runDiscovery() {
+        setDiscoveryState("neutral", "Discovery wird gestartet...");
+        discoveryProgress.textContent = "Starte Job...";
+        discoveryJson.textContent = "Anfrage laeuft...";
+
+        try {
+          const params = buildCommonParams();
+          params.set("start_unit", discoveryStartUnitInput.value.trim());
+          params.set("end_unit", discoveryEndUnitInput.value.trim());
+          params.set("register_type", discoveryRegisterTypeInput.value);
+          params.set("start_address", discoveryStartAddressInput.value.trim());
+          params.set("end_address", discoveryEndAddressInput.value.trim());
+          params.set("block_size", discoveryBlockSizeInput.value.trim());
+          await startBackgroundJob(`/api/jobs/discovery?${params.toString()}`, (payload) => {
+            discoveryJobId = payload.job_id;
+            setDiscoveryState("neutral", payload.message);
+            pollJob(discoveryJobId, "discovery");
+          });
+        } catch (error) {
+          setDiscoveryState("error", "Discovery konnte nicht ausgefuehrt werden.");
+          discoveryJson.textContent = JSON.stringify(
+            { success: false, message: String(error) },
+            null,
+            2
+          );
+        }
+      }
+
+      async function loadOverview() {
+        setOverviewState("neutral", "Live-Werte werden geladen...");
+        overviewJson.textContent = "Anfrage laeuft...";
+
+        try {
+          const params = buildCommonParams();
+          params.set("unit_id", unitIdInput.value.trim());
+          const response = await fetch(`/api/growatt/overview?${params.toString()}`);
+          const payload = await response.json();
+
+          setOverviewState(response.ok ? "success" : "error", response.ok ? "Live-Werte geladen." : payload.message);
+          if (response.ok) {
+            renderOverview(payload);
+          }
+          overviewJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setOverviewState("error", "Live-Werte konnten nicht geladen werden.");
+          overviewJson.textContent = JSON.stringify(
+            { success: false, message: String(error) },
+            null,
+            2
+          );
+        }
+      }
+
+      async function loadRegisterExplorer() {
+        setRegisterExplorerState("neutral", "Register werden geladen...");
+        registerJson.textContent = "Anfrage laeuft...";
+
+        try {
+          const params = buildCommonParams();
+          params.set("unit_id", unitIdInput.value.trim());
+          const response = await fetch(`/api/growatt/register-explorer?${params.toString()}`);
+          const payload = await response.json();
+
+          setRegisterExplorerState(response.ok ? "success" : "error", response.ok ? `${payload.row_count} Registereintraege geladen.` : payload.message);
+          if (response.ok) {
+            renderRegisterTable(payload.rows);
+          }
+          registerJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setRegisterExplorerState("error", "Register konnten nicht geladen werden.");
+          registerJson.textContent = JSON.stringify(
+            { success: false, message: String(error) },
+            null,
+            2
+          );
+        }
+      }
+
+      async function loadLoggerStatus() {
+        setLoggerState("neutral", "Logger-Status wird geladen...");
+        loggerJson.textContent = "Anfrage laeuft...";
+
+        try {
+          const response = await fetch("/api/logger/status");
+          const payload = await response.json();
+          setLoggerState(payload.running ? "success" : "error", payload.running ? "Logger laeuft." : "Logger ist gestoppt.");
+          loggerIntervalInput.value = payload.interval_seconds;
+          loggerMeta.textContent = `Intervall: ${payload.interval_seconds}s | Letzte Laufzeit: ${payload.last_duration_seconds ?? "-"}s | Snapshots: ${payload.saved_snapshots} | Letzter Erfolg: ${payload.last_success_at_local ?? "-"}`;
+          loggerJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setLoggerState("error", "Logger-Status konnte nicht geladen werden.");
+          loggerJson.textContent = JSON.stringify(
+            { success: false, message: String(error) },
+            null,
+            2
+          );
+        }
+      }
+
+      async function startLogger() {
+        setLoggerState("neutral", "Logger wird gestartet...");
+        try {
+          const response = await fetch("/api/logger/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              interval_seconds: Number.parseInt(loggerIntervalInput.value, 10)
+            })
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.message || "Logger konnte nicht gestartet werden.");
+          }
+          setLoggerState(payload.status.running ? "success" : "error", payload.started ? "Logger gestartet." : "Logger lief bereits.");
+          loggerIntervalInput.value = payload.status.interval_seconds;
+          loggerMeta.textContent = `Intervall: ${payload.status.interval_seconds}s | Letzte Laufzeit: ${payload.status.last_duration_seconds ?? "-"}s | Snapshots: ${payload.status.saved_snapshots}`;
+          loggerJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setLoggerState("error", "Logger konnte nicht gestartet werden.");
+          loggerJson.textContent = JSON.stringify({ success: false, message: String(error) }, null, 2);
+        }
+      }
+
+      async function stopLogger() {
+        setLoggerState("neutral", "Logger wird gestoppt...");
+        try {
+          const response = await fetch("/api/logger/stop", { method: "POST" });
+          const payload = await response.json();
+          setLoggerState(payload.status.running ? "neutral" : "error", payload.stopped ? "Logger wurde gestoppt." : "Logger war bereits aus.");
+          loggerMeta.textContent = `Intervall: ${payload.status.interval_seconds}s | Letzte Laufzeit: ${payload.status.last_duration_seconds ?? "-"}s | Snapshots: ${payload.status.saved_snapshots}`;
+          loggerJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setLoggerState("error", "Logger konnte nicht gestoppt werden.");
+        }
+      }
+
+      async function applyLoggerInterval() {
+        setLoggerState("neutral", "Logger-Intervall wird aktualisiert...");
+        try {
+          const response = await fetch("/api/logger/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              interval_seconds: Number.parseInt(loggerIntervalInput.value, 10)
+            })
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.message || "Logger-Intervall konnte nicht aktualisiert werden.");
+          }
+          setLoggerState("success", payload.message);
+          loggerIntervalInput.value = payload.status.interval_seconds;
+          loggerMeta.textContent = `Intervall: ${payload.status.interval_seconds}s | Letzte Laufzeit: ${payload.status.last_duration_seconds ?? "-"}s | Snapshots: ${payload.status.saved_snapshots} | Letzter Erfolg: ${payload.status.last_success_at_local ?? "-"}`;
+          loggerJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setLoggerState("error", "Logger-Intervall konnte nicht aktualisiert werden.");
+          loggerJson.textContent = JSON.stringify({ success: false, message: String(error) }, null, 2);
+        }
+      }
+
+      async function loadRecentLoggerData() {
+        setLoggerState("neutral", "Letzte Snapshots werden geladen...");
+        try {
+          const response = await fetch("/api/logger/recent?limit=20");
+          const payload = await response.json();
+          renderLoggerTable(payload.rows);
+          setLoggerState("success", `${payload.rows.length} Snapshots geladen.`);
+          loggerJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setLoggerState("error", "Snapshots konnten nicht geladen werden.");
+        }
+      }
+
+      async function loadHistory() {
+        setHistoryState("neutral", "Verlaufsdaten werden geladen...");
+        historyJson.textContent = "Anfrage laeuft...";
+
+        const selectedFields = getSelectedHistoryFields();
+        if (selectedFields.length === 0) {
+          setHistoryState("error", "Bitte mindestens einen Datenpunkt auswaehlen.");
+          return;
+        }
+
+        try {
+          const params = new URLSearchParams({
+            start: new Date(historyStartInput.value).toISOString(),
+            end: new Date(historyEndInput.value).toISOString(),
+            limit: historyLimitInput.value.trim(),
+            fields: selectedFields.join(",")
+          });
+          const response = await fetch(`/api/logger/history?${params.toString()}`);
+          const payload = await response.json();
+          if (!response.ok) {
+            throw new Error(payload.message || "Verlaufsdaten konnten nicht geladen werden.");
+          }
+
+          setHistoryState("success", `${payload.point_count} Datenpunkte geladen.`);
+          const firstTimestamp = payload.points.length ? (payload.points[0].timestamp_local || payload.points[0].timestamp_utc) : "-";
+          const lastTimestamp = payload.points.length ? (payload.points[payload.points.length - 1].timestamp_local || payload.points[payload.points.length - 1].timestamp_utc) : "-";
+          historyMeta.textContent = `Zeitraum: ${firstTimestamp} bis ${lastTimestamp} | Reihen: ${Object.keys(payload.fields).length}`;
+          renderHistoryCharts(payload);
+          historyJson.textContent = JSON.stringify(payload, null, 2);
+        } catch (error) {
+          setHistoryState("error", "Verlaufsdaten konnten nicht geladen werden.");
+          historyJson.textContent = JSON.stringify({ success: false, message: String(error) }, null, 2);
+        }
+      }
+
+      probeButton.addEventListener("click", probeServer);
+      overviewButton.addEventListener("click", loadOverview);
+      registerExplorerButton.addEventListener("click", loadRegisterExplorer);
+      loggerApplyIntervalButton.addEventListener("click", applyLoggerInterval);
+      loggerStatusButton.addEventListener("click", loadLoggerStatus);
+      loggerStartButton.addEventListener("click", startLogger);
+      loggerStopButton.addEventListener("click", stopLogger);
+      loggerRecentButton.addEventListener("click", loadRecentLoggerData);
+      historyLoadButton.addEventListener("click", loadHistory);
+      modbusReadButton.addEventListener("click", readModbusRegisters);
+      modbusScanButton.addEventListener("click", scanModbusUnits);
+      modbusStopButton.addEventListener("click", () => stopBackgroundJob(modbusJobId, "modbus"));
+      discoveryButton.addEventListener("click", runDiscovery);
+      discoveryStopButton.addEventListener("click", () => stopBackgroundJob(discoveryJobId, "discovery"));
+      initializeHistoryDefaults();
+      renderHistoryFieldPicker();
+      setupCollapsiblePanels();
+    </script>
+  </body>
+</html>

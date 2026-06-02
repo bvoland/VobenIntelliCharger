@@ -1,0 +1,14 @@
+services:
+  pv-charge-controller:
+    build: .
+    container_name: pv-charge-controller
+    restart: unless-stopped
+    ports:
+      - "8098:8098"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    environment:
+      PORT: "8098"
+      HOST: "0.0.0.0"
+      PYTHON_BIN: "python3"

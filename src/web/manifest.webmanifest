@@ -1,0 +1,9 @@
+{
+  "name": "VOBEN INTELLICHARGER",
+  "short_name": "INTELLICHARGER",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5efe8",
+  "theme_color": "#d36b2d",
+  "icons": []
+}

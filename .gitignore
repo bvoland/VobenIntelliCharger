@@ -1,0 +1,13 @@
+node_modules/
+dist/
+data/
+config/
+*.log
+*.tgz
+*.tar
+*.zip
+.env
+.env.*
+.claude/
+__pycache__/
+*.pyc

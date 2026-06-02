@@ -1,0 +1,49 @@
+{
+  "growatt": {
+    "loggerBaseUrl": "http://127.0.0.1:5001",
+    "inverterHost": "192.168.0.143",
+    "inverterPort": 8899,
+    "unitId": 1,
+    "pollIntervalSeconds": 10
+  },
+  "easee": {
+    "chargerId": "EHEXFRJD",
+    "pollIntervalSeconds": 15,
+    "safeMode": false,
+    "chargerEnabled": true
+  },
+  "rules": {
+    "enabled": false,
+    "mode": "pv_optimized",
+    "minSocPercent": 90,
+    "maxBatteryDischargeWatts": 300,
+    "maxGridImportWatts": 50,
+    "maxChargePowerWatts": 11000,
+    "phaseMode": "three",
+    "minAmps": 7,
+    "maxAmps": 16,
+    "regulationIntervalSeconds": 10,
+    "holdSecondsAfterAdjustment": 30,
+    "upStepAmps": 1,
+    "downStepAmps": 1,
+    "manualOverrideEnabled": false,
+    "manualOverrideAmps": 16,
+    "targetVehicleSocPercent": 70
+  },
+  "mg": {
+    "enabled": false,
+    "apiBaseUrl": "http://127.0.0.1:5002",
+    "username": "",
+    "password": "",
+    "vehicleId": ""
+  },
+  "location": {
+    "lat": 0,
+    "lon": 0
+  },
+  "weather": {
+    "enabled": true,
+    "targetBatterySocAtSunsetPercent": 90,
+    "sunsetPreloadWindowMinutes": 120
+  }
+}
