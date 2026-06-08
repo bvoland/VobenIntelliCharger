@@ -12,6 +12,7 @@ logic.
 - automatic phase selection for 1-phase and 3-phase charging
 - manual "Charge now" mode with current and target vehicle SOC
 - MG iSmart integration for vehicle SOC, range, and target-SOC stop
+- MG login/debug output directly in the Login section plus `MG laden` in Diagnostics
 - location and weather logic using SunCalc and Open-Meteo irradiance forecasts
 - battery preloading before sunset if the configured battery target SOC is not reached
 - adaptive PV forecast calibration from real PV output and irradiance data
@@ -62,14 +63,18 @@ active battery discharge. Higher values allow a small discharge before charging
 current is reduced.
 
 `growatt.loggerBaseUrl` is set internally to the embedded reader.
+Config JSON files are written atomically so `settings.json` is not left empty if
+the process is interrupted during a save.
 
 ## Operating Logic
 
 - The home screen contains manual controls, Charge now, live values, weather, wallbox control, history, and system status.
 - Configuration, login credentials, and debug output are separated into menu sections.
+- Easee and MG login panels now show their latest raw API/debug output directly below the connection controls.
+- The diagnostics section can explicitly load Growatt, Easee, and MG data.
 - The automation does not have to be re-enabled before every plug-in. When active, it decides based on PV, battery, grid import, weather, and vehicle SOC.
 - `Charge now` sets a manual override until the selected target SOC is reached. After that, the automation can continue normally.
-- Easee is capped at 16 A. In `auto` phase mode, the app can switch between 1-phase and 3-phase charging depending on surplus power.
+- Easee is capped at 16 A. In `auto` phase mode, the app switches between 1-phase and 3-phase charging depending on surplus power. When PV power drops below the 3-phase minimum while charging, the automation switches to 1-phase before stopping so charging can continue at lower power.
 - The UI supports German and English. The language selector is in the top-right corner of the home header.
 
 ## Easee Safe Mode
@@ -102,6 +107,8 @@ Important endpoints:
 - `POST /api/integrations/easee/auth`
 - `GET /api/integrations/easee/chargers`
 - `GET /api/integrations/growatt/test`
+- `GET /api/integrations/mg/status`
+- `POST /api/integrations/mg/auth`
 
 The embedded Growatt reader also exposes internal endpoints such as
 `/api/growatt/overview`, `/api/growatt/register-explorer`,
@@ -179,3 +186,4 @@ stable for a while even though future growth pressure is reduced.
 - Easee Dynamic Current intentionally uses the volatile/dynamic API, not static flash settings.
 - The automation pauses active charging only for protection reasons; passive reasons leave manually started sessions alone.
 - MG is connected through the embedded reader. Without enabled MG integration, PV/Easee control continues unchanged.
+- MG can report a successful account login while still rejecting vehicle access with code `1100003` if the vehicle authorization has expired or been revoked in the MG app.

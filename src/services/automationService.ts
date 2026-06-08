@@ -158,11 +158,34 @@ export class AutomationService {
     decision: ControlDecision
   ): PlannedAction {
     const minimumChargeAmp = Math.max(7, settings.rules.minAmps);
+    const reportedDynamicCurrent = easee.dynamicChargerCurrentAmp ?? null;
     const desiredAmps = typeof decision.suggestedAmps === "number"
       ? Math.max(0, Math.min(MAX_EASEE_CURRENT_AMPS, settings.rules.maxAmps, decision.suggestedAmps))
       : null;
     const desiredPhaseMode = this.toEaseePhaseMode(decision.phaseMode);
+    const actualPhaseMode = this.readPhaseMode(easee);
     const actualDynamicCurrent = easee.dynamicChargerCurrentAmp ?? easee.outputCurrentAmp ?? 0;
+
+    // Safety guard: if an external app/site configuration pushed the dynamic
+    // charger current above our supported 16 A limit, force it back down.
+    if (reportedDynamicCurrent != null && reportedDynamicCurrent > MAX_EASEE_CURRENT_AMPS) {
+      return {
+        type: "setDynamicCurrent",
+        amps: MAX_EASEE_CURRENT_AMPS,
+        summary: `Sicherheitsgrenze aktiv: Dynamic Current von ${Math.round(reportedDynamicCurrent)} A auf ${MAX_EASEE_CURRENT_AMPS} A begrenzen`
+      };
+    }
+
+    // A 3→1 phase downgrade takes priority over stopping: the controller derived
+    // "single" because the 3-phase load exceeds the guard limit, but 1-phase may
+    // stay within limits. Execute the switch and let the next cycle re-evaluate.
+    if (easee.charging && actualPhaseMode === 3 && desiredPhaseMode === 1) {
+      return {
+        type: "setPhaseMode",
+        phaseMode: 1,
+        summary: `Wechsel auf 1-phasig (Schutzgrenze im 3-phasigen Betrieb nicht haltbar)`
+      };
+    }
 
     if (!decision.shouldCharge || desiredAmps == null || desiredAmps < minimumChargeAmp) {
       // Only stop an active session when a safety guard is active (SOC, grid etc.).
@@ -175,7 +198,7 @@ export class AutomationService {
       return { type: "none", summary: `Automatik wartet: ${decision.reason}` };
     }
 
-    if (this.lastRequestedPhaseMode !== desiredPhaseMode) {
+    if (actualPhaseMode !== desiredPhaseMode) {
       return {
         type: "setPhaseMode",
         phaseMode: desiredPhaseMode,
@@ -183,7 +206,7 @@ export class AutomationService {
       };
     }
 
-    if (this.lastRequestedAmps !== desiredAmps || Math.round(actualDynamicCurrent) !== Math.round(desiredAmps)) {
+    if (Math.round(actualDynamicCurrent) !== Math.round(desiredAmps)) {
       return {
         type: "setDynamicCurrent",
         amps: desiredAmps,
@@ -273,6 +296,18 @@ export class AutomationService {
     }
 
     return Math.max(...candidates);
+  }
+
+  private readPhaseMode(easee: EaseeStatePayload): 1 | 2 | 3 {
+    const raw = (easee.raw as Record<string, unknown> | undefined) ?? {};
+    const outputPhase = Number(raw.outputPhase);
+    if (outputPhase === 1 || outputPhase === 10 || outputPhase === 14) {
+      return 1;
+    }
+    if (outputPhase === 3 || outputPhase === 7 || outputPhase === 30) {
+      return 3;
+    }
+    return this.lastRequestedPhaseMode ?? 2;
   }
 
   private persistDecision(

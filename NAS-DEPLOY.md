@@ -42,12 +42,20 @@
 - Raw snapshots older than 7 days are consolidated into hourly rows. Control decisions are cleaned after 30 days, weather fetches and calibration samples after 90 days.
 - `config/settings.json` also contains `location` and `weather` for sun times, forecast, and battery preloading before sunset.
 - `config/settings.json` also contains MG settings. Credentials must not be included in deployment archives.
+- Config JSON writes should be atomic. A `0` byte `config/settings.json` was observed once on the NAS and caused repeated startup crashes until restored from backup.
 - `rules.maxBatteryDischargeWatts: 0` is intentionally strict: any measured battery discharge causes reduction or pause.
 - Easee safe mode is off by default and can be deliberately enabled in the UI.
 - Easee current is capped at 16 A.
 - Phase mode `auto` can control both 1-phase and 3-phase charging.
 - `src/config/configStore.ts` tolerates UTF-8 BOM in JSON files because this once caused parser errors.
 - If Easee returns `401` while refreshing, `authInvalid` is set and the UI asks for reconnection.
+- MG login may succeed while status still fails if the MG app's vehicle authorization has expired or been revoked. In that case expect MG code `1100003`.
+- On this NAS, non-interactive SSH sessions may start with an empty `PATH`; use absolute paths or export a full `PATH` before calling Docker.
+- On this NAS, Docker is available at `/usr/local/bin/docker`.
+- The SSH user can log in normally, but Docker access requires `sudo`.
+- If SSH automation needs a password with special characters, a temporary UTF-8 password file worked reliably with `plink`/`pscp` `-pwfile`.
+- Keep the NAS host key pinned for automation. Last verified fingerprint:
+  `ssh-ed25519 255 SHA256:LqUeOEbqBmAb6N+qpFphngHQOysFZFSG/P0BPaf0O6w`
 
 ## Local Deployment To NAS
 
@@ -77,6 +85,29 @@ $env:PVCC_NAS_HOST = "your-nas-host-or-ip"
 .\deploy-nas-safe.ps1
 ```
 
+## Verified Non-Interactive Deploy Notes
+
+- Local validation used before deploy:
+  - `npm run check`
+  - `npm run build`
+- The runtime archive must still exclude persistent files from `config` and `data`.
+- For this NAS, the safe remote flow is:
+  1. `docker compose stop`
+  2. create backup `backups/predeploy-<timestamp>-config-data.tgz` from `config` and `data`
+  3. extract `/volume1/docker/pv-charge-controller-runtime.tgz` into `/volume1/docker/pv-charge-controller`
+  4. `docker compose build`
+  5. `docker compose up -d`
+  6. verify `http://127.0.0.1:8098/api/health`
+- In non-interactive sessions, prefer:
+
+```sh
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+printf '%s\n' "$SUDO_PASSWORD" | sudo -S -p '' /usr/local/bin/docker compose ps
+```
+
+- If `docker: command not found` appears, the issue is the remote `PATH`, not a missing Docker installation.
+- If `permission denied while trying to connect to the Docker daemon socket` appears, rerun the Docker command through `sudo`.
+
 ## Useful NAS Commands
 
 Run from `/volume1/docker/pv-charge-controller`:
@@ -91,6 +122,22 @@ docker compose stop
 
 ## Last Verified NAS Status
 
+- Last verified deployment: 2026-06-08 around 17:05 Europe/Berlin.
+- Backup before deployment:
+  `/volume1/docker/pv-charge-controller/backups/predeploy-20260608-170458-config-data.tgz`
+- Container status after deployment:
+  `Up`, health endpoint returned `{"status":"ok"}`
+- MG login and vehicle status working: `Status geladen: SOC=91.1%`
+- Changes deployed: MG vehicle values now update on overview page (fixed sanitized-settings bug in dashboard); automatic 3→1 phase downgrade when 3-phase guard fires.
+- Last verified deployment: 2026-06-08 around 14:33 Europe/Berlin.
+- Backup before deployment:
+  `/volume1/docker/pv-charge-controller/backups/predeploy-20260608-143208-config-data.tgz`
+- Container status after deployment:
+  `Up`, health endpoint returned `{"status":"ok"}`
+- Observed runtime note after deployment:
+  MG login still works, but vehicle authorization currently reports revoked access and may require reconnect/re-authorization in MG.
+- Additional incident after deployment:
+  `config/settings.json` was temporarily found as `0` bytes and had to be restored from backup before a follow-up redeploy.
 - Last verified deployment: 2026-06-02 around 22:14 Europe/Berlin.
 - Backup before deployment:
   `/volume1/docker/pv-charge-controller/backups/predeploy-20260602-221426-config-data.tgz`

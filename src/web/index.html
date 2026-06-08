@@ -74,6 +74,7 @@
       .feedback.ok { border-color:rgba(45,123,82,.3); background:rgba(45,123,82,.08); color:var(--ok); }
       .feedback.error { border-color:rgba(180,67,44,.3); background:rgba(180,67,44,.1); color:var(--bad); }
       pre { white-space:pre-wrap; word-break:break-word; background:#1f2a2d; color:#f5efe8; padding:1rem; border-radius:8px; max-height:420px; overflow:auto; }
+      .output-mini { margin-top:.85rem; max-height:220px; font-size:.85rem; }
       button.active-range { background:#1f2a2d; }
       #history-tooltip { position:absolute; background:rgba(31,42,45,.96); color:#f5efe8; border-radius:14px; padding:.6rem 1rem; font-size:.85rem; pointer-events:none; white-space:nowrap; z-index:10; box-shadow:0 4px 16px rgba(0,0,0,.35); display:none; line-height:1.55; }
       .muted { color:var(--muted); }
@@ -241,6 +242,7 @@
         </div>
         <div id="easee-status-summary" class="badge-row"></div>
         <div id="easee-limit-warning" class="feedback">Noch keine aktive Limit-Warnung.</div>
+        <pre id="easee-login-output" class="output-mini">Noch keine Easee-Login-Rohdaten.</pre>
       </section>
 
       <section class="panel" data-view="config">
@@ -326,6 +328,7 @@
         </div>
         <div id="mg-status-summary" class="badge-row"></div>
         <div id="mg-feedback" class="feedback">MG ist noch nicht verbunden.</div>
+        <pre id="mg-login-output" class="output-mini">Noch keine MG-Login-Rohdaten.</pre>
       </section>
 
       <section class="panel" data-view="config">
@@ -416,6 +419,7 @@
         <div class="button-row">
           <button id="load-growatt-snapshots" class="secondary">Growatt laden</button>
           <button id="load-easee-snapshots" class="secondary">Easee laden</button>
+          <button id="load-mg-status" class="secondary">MG laden</button>
           <button id="evaluate-control" class="secondary">Regelung testen</button>
         </div>
         <pre id="output">Warte auf Daten...</pre>

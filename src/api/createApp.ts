@@ -31,12 +31,37 @@ export function createApp(deps: {
   app.use(express.json({ limit: "2mb" }));
   app.use(express.static(path.join(deps.baseDir, "src", "web")));
 
+  function sanitizeSettings<T extends { mg?: { password?: string } }>(settings: T): T {
+    return {
+      ...settings,
+      mg: settings.mg
+        ? {
+            ...settings.mg,
+            password: ""
+          }
+        : settings.mg
+    };
+  }
+
+  function mergeMgPassword<T extends { mg: { password: string } }>(next: T, current: T): T {
+    if (next.mg.password.trim()) {
+      return next;
+    }
+    return {
+      ...next,
+      mg: {
+        ...next.mg,
+        password: current.mg.password
+      }
+    };
+  }
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok" });
   });
 
   app.get("/api/settings", async (_req, res) => {
-    res.json(await deps.settingsService.getSettings());
+    res.json(sanitizeSettings(await deps.settingsService.getSettings()));
   });
 
   app.put("/api/settings", async (req, res) => {
@@ -91,8 +116,10 @@ export function createApp(deps: {
     });
 
     const parsed = schema.parse(req.body);
-    await deps.settingsService.saveSettings(parsed);
-    res.json({ success: true, settings: parsed });
+    const current = await deps.settingsService.getSettings();
+    const next = mergeMgPassword(parsed, current);
+    await deps.settingsService.saveSettings(next);
+    res.json({ success: true, settings: sanitizeSettings(next) });
   });
 
   app.get("/api/integrations/growatt/test", async (_req, res) => {
@@ -155,17 +182,17 @@ export function createApp(deps: {
       enabled: z.boolean(),
       apiBaseUrl: z.string(),
       username: z.string().min(1),
-      password: z.string().min(1),
+      password: z.string(),
       vehicleId: z.string()
     });
     const parsed = schema.parse(req.body);
     const settings = await deps.settingsService.getSettings();
-    const nextSettings = {
+    const nextSettings = mergeMgPassword({
       ...settings,
       mg: parsed
-    };
+    }, settings);
     await deps.settingsService.saveSettings(nextSettings);
-    const auth = await deps.mgClient.authenticate(parsed);
+    const auth = await deps.mgClient.authenticate(nextSettings.mg);
     if (auth.vin && !parsed.vehicleId) {
       nextSettings.mg.vehicleId = auth.vin;
       await deps.settingsService.saveSettings(nextSettings);
@@ -229,7 +256,7 @@ export function createApp(deps: {
 
     res.json({
       status: deps.pollingService.getStatus(),
-      settings,
+      settings: sanitizeSettings(settings),
       growatt,
       easee,
       mg,

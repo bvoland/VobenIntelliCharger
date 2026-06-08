@@ -132,6 +132,12 @@ def _extract_status(vehicle_status, charging_status=None, charging_mgmt=None) ->
     }
 
 
+def _combine_fetch_errors(fetch_warnings: list[str]) -> str:
+    if not fetch_warnings:
+        return "Keine verwertbaren Fahrzeugdaten in der API-Antwort"
+    return " ; ".join(fetch_warnings)
+
+
 def _vehicle_status_has_soc(vehicle_status) -> bool:
     if vehicle_status is None:
         return False
@@ -275,11 +281,12 @@ def vehicle_status():
             _cached_at = now
             log.info("Status geladen: SOC=%s%%", _cached.get("socPercent"))
         except Exception as exc:
-            log.error("Status-Abruf fehlgeschlagen: %s", exc)
+            combined_error = _combine_fetch_errors(fetch_warnings) if 'fetch_warnings' in locals() else str(exc)
+            log.error("Status-Abruf fehlgeschlagen: %s", combined_error)
             if _cached:
                 # Letzten Cache zurückgeben, aber Fehler markieren
-                return jsonify({"configured": True, "status": _cached, "fetchError": str(exc)})
-            return jsonify({"configured": True, "error": str(exc)}), 500
+                return jsonify({"configured": True, "status": _cached, "fetchError": combined_error})
+            return jsonify({"configured": True, "error": combined_error}), 500
 
     return jsonify({"configured": True, "status": _cached})
 

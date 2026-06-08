@@ -129,7 +129,21 @@ export class ChargingController {
     // When not actively charging use 0 so the ramp starts from a clean baseline.
     const currentAmp = easee.charging ? (easee.outputCurrentAmp ?? 0) : 0;
     const startFromCurtailmentW = currentAmp <= 0 && !easee.charging ? curtailedPvSurplusW : 0;
-    const availableSurplusW = Math.max(chargeW, startFromCurtailmentW);
+    const assumedPhaseCount = configuredPhaseMode === "three"
+      ? 3
+      : configuredPhaseMode === "single"
+        ? 1
+        : this.derivePhaseCount(easee) === 3 ? 3 : 1;
+    const stabilityMarginW = this.resolveStabilityMarginW(assumedPhaseCount, rules.upStepAmps, rules.downStepAmps);
+    const dischargeTargetW = this.resolveSoftTarget(rules.maxBatteryDischargeWatts, stabilityMarginW);
+    const importTargetW = this.resolveSoftTarget(rules.maxGridImportWatts, stabilityMarginW);
+    const dischargeHeadroomW = Math.max(0, dischargeTargetW - discharge);
+    const importHeadroomW = Math.max(0, importTargetW - importPower);
+    const availableSurplusW = Math.max(
+      0,
+      chargeW + dischargeHeadroomW + importHeadroomW,
+      startFromCurtailmentW + dischargeHeadroomW + importHeadroomW
+    );
     const phaseMode = this.resolveTargetPhaseMode(
       configuredPhaseMode,
       availableSurplusW,
@@ -203,17 +217,38 @@ export class ChargingController {
       return { reason: "Batterieentladung begrenzen", suggestedAmps: next, phaseMode, shouldCharge: true, guardActive: true, notes };
     }
 
-    // PV-Fenster: proportional hochregeln basierend auf Batterie-Ueberschuss
-    // oder auf geschaetztem abgeregeltem PV-Potenzial bei voller Batterie.
+    const inDischargeCorridor = discharge > dischargeTargetW && discharge <= rules.maxBatteryDischargeWatts;
+    const inImportCorridor = importPower > importTargetW && importPower <= rules.maxGridImportWatts;
+    if (currentAmp > 0 && (inDischargeCorridor || inImportCorridor)) {
+      if (inDischargeCorridor) {
+        notes.push(`Batterieentladung ${discharge.toFixed(0)} W liegt im Toleranzkorridor ${dischargeTargetW.toFixed(0)}-${rules.maxBatteryDischargeWatts} W → halte Ladestrom stabil.`);
+      }
+      if (inImportCorridor) {
+        notes.push(`Netzimport ${importPower.toFixed(0)} W liegt im Toleranzkorridor ${importTargetW.toFixed(0)}-${rules.maxGridImportWatts} W → halte Ladestrom stabil.`);
+      }
+      return {
+        reason: "Regelkorridor halten",
+        suggestedAmps: Math.max(minimumChargeAmp, currentAmp),
+        phaseMode,
+        shouldCharge: true,
+        guardActive: false,
+        notes
+      };
+    }
+
+    // PV-Fenster: proportional hochregeln auf Basis von realem Batterie-Laden
+    // plus dem konfigurierten Restspielraum fuer Batterieentladung/Netzbezug.
     const suggestedAmps = this.proportionalUp(currentAmp, minimumChargeAmp, effectiveMaxAmps, availableSurplusW, wattsPerAmp, rules.upStepAmps);
     const stepTaken = suggestedAmps - Math.max(currentAmp, minimumChargeAmp);
     notes.push("Keine Schutzgrenze verletzt.");
     if (suggestedAmps === 0) {
-      notes.push(`Freier PV-Ueberschuss ${availableSurplusW.toFixed(0)} W reicht noch nicht fuer ${minimumChargeAmp} A bei ${estimatedPhaseCount} Phase(n).`);
+      notes.push(`Verfuegbarer Regelspielraum ${availableSurplusW.toFixed(0)} W reicht noch nicht fuer ${minimumChargeAmp} A bei ${estimatedPhaseCount} Phase(n).`);
     } else if (chargeW > 50 && stepTaken > 0) {
-      notes.push(`Batterie nimmt ${chargeW.toFixed(0)} W auf → Schritt +${stepTaken.toFixed(0)} A.`);
+      notes.push(`Batterie nimmt ${chargeW.toFixed(0)} W auf, zusaetzlicher Spielraum Batterie/Netz ${Math.round(dischargeHeadroomW + importHeadroomW)} W → Schritt +${stepTaken.toFixed(0)} A.`);
+    } else if ((dischargeHeadroomW > 50 || importHeadroomW > 50) && stepTaken > 0) {
+      notes.push(`Nutze konfigurierten Spielraum: Batterie ${Math.round(dischargeHeadroomW)} W, Netz ${Math.round(importHeadroomW)} W → Schritt +${stepTaken.toFixed(0)} A.`);
     } else if (startFromCurtailmentW > 50) {
-      notes.push(`Batterie voll/abgeregelt, PV-Potenzial ca. ${startFromCurtailmentW.toFixed(0)} W → starte mit ${suggestedAmps} A.`);
+      notes.push(`Batterie voll/abgeregelt, PV-Potenzial ca. ${startFromCurtailmentW.toFixed(0)} W plus Batterie/Netz-Spielraum → starte mit ${suggestedAmps} A.`);
     }
     if (maxAmpsByPower != null && maxAmpsByPower < rules.maxAmps) {
       notes.push(`Leistungsgrenze deckelt auf max. ${effectiveMaxAmps} A.`);
@@ -312,6 +347,20 @@ export class ChargingController {
     }
     const wattsPerAmp = 230 * Math.max(1, phaseCount);
     return Math.floor(maxChargePowerWatts / wattsPerAmp);
+  }
+
+  private resolveStabilityMarginW(phaseCount: number, upStepAmps: number, downStepAmps: number): number {
+    const minStepAmps = Math.max(1, Math.min(upStepAmps, downStepAmps));
+    return Math.max(100, 230 * Math.max(1, phaseCount) * minStepAmps);
+  }
+
+  private resolveSoftTarget(maxWatts: number, marginW: number): number {
+    if (!Number.isFinite(maxWatts) || maxWatts <= 0) {
+      return 0;
+    }
+
+    const corridorW = Math.min(marginW, maxWatts * 0.4);
+    return Math.max(0, maxWatts - corridorW);
   }
 
   private estimateCurtailedPvSurplus(

@@ -126,6 +126,7 @@ const translations = {
     "Letzte Snapshots": "Latest snapshots",
     "Growatt laden": "Load Growatt",
     "Easee laden": "Load Easee",
+    "MG laden": "Load MG",
     "Regelung testen": "Test control",
     "Warte auf Daten...": "Waiting for data...",
     "Polling": "Polling",
@@ -168,6 +169,93 @@ const translations = {
     "Live-Daten folgen mit dem nächsten Poll.": "Live data will follow with the next poll.",
     "Keine Charger im Easee-Account gefunden.": "No chargers found in the Easee account.",
     "Charger automatisch ausgewählt.": "Charger selected automatically."
+    ,
+    "Kein Standort konfiguriert — bitte Breitengrad und Längengrad eintragen und speichern.": "No location configured. Please enter latitude and longitude and save.",
+    "Sonnenaufgang": "Sunrise",
+    "Sonnenhöchststand": "Solar noon",
+    "Sonnenuntergang": "Sunset",
+    "Zeit bis Sonnenuntergang": "Time until sunset",
+    "Sonne bereits untergegangen": "Sun has already set",
+    "Strahlung jetzt": "Current irradiance",
+    "Kalibrierungsfaktor": "Calibration factor",
+    "Kalibrierung": "Calibration",
+    "Optimales Ladefenster": "Optimal charging window",
+    "Batterie-Vorladen aktiv": "Battery preloading active",
+    "Open-Meteo nicht erreichbar": "Open-Meteo unavailable",
+    "Sonnenzeiten funktionieren trotzdem.": "Sun times still work.",
+    "PV-Fenster aktiv.": "PV window active.",
+    "Nacht": "Night",
+    "kein PV-Fenster aktiv.": "no PV window active.",
+    "MG ist angemeldet, aber der Zugriff auf das Fahrzeug ist abgelaufen oder wurde widerrufen. Bitte das Fahrzeug in der MG-App neu autorisieren und danach hier erneut verbinden.": "MG login is valid, but vehicle access has expired or was revoked. Please re-authorize the vehicle in the MG app and reconnect here afterwards.",
+    "MG ist verbunden, liefert im Moment aber keine verwertbaren Fahrzeugdaten. Bitte Rohdaten pruefen und den Abruf erneut versuchen.": "MG is connected but currently provides no usable vehicle data. Please check the raw output and try the request again.",
+    "MG-Abruf fehlgeschlagen:": "MG request failed:",
+    "MG zeigt den letzten bekannten Status. Ein neuer Abruf ist fehlgeschlagen:": "MG is showing the last known status. A fresh request failed:",
+    "MG verbunden. Fahrzeugdaten zuletzt aktualisiert:": "MG connected. Vehicle data last updated:",
+    "MG ist aktiviert. Fahrzeugdaten werden gerade geladen.": "MG is enabled. Vehicle data is being loaded.",
+    "PV System": "PV system",
+    "Hauslast": "House load",
+    "AC Gesamt": "AC total",
+    "Letzte Daten": "Latest data",
+    "PV liefert": "PV producing",
+    "Keine PV-Leistung": "No PV power",
+    "Batterie": "Battery",
+    "Batterieleistung": "Battery power",
+    "Laden": "Charging",
+    "Entladen": "Discharging",
+    "Kein Flow-State": "No flow state",
+    "Netz": "Grid",
+    "Import": "Import",
+    "Export": "Export",
+    "Regelgrenze": "Control limit",
+    "Netzbezug": "Grid import",
+    "Einspeisung": "Exporting",
+    "Nahe Null": "Near zero",
+    "Wallbox": "Wallbox",
+    "Ausgangsstrom": "Output current",
+    "Session": "Session",
+    "Online": "Online",
+    "Offline": "Offline",
+    "Freigegeben": "Enabled",
+    "Deaktiviert": "Disabled",
+    "Lädt": "Charging",
+    "Lädt nicht": "Not charging",
+    "Reichweite": "Range",
+    "Ziel-SOC": "Target SOC",
+    "Letzter Status": "Last status",
+    "MG Fehler": "MG error",
+    "Status bereit": "Status ready",
+    "Regler-Ziel": "Controller target",
+    "An Easee gesetzt": "Sent to Easee",
+    "Von Easee signalisiert": "Reported by Easee",
+    "Vom Fahrzeug gezogen": "Drawn by vehicle",
+    "Site-/Circuit-Limit": "Site/circuit limit",
+    "Letzter Regler-Eingriff": "Last controller action",
+    "Reglerstatus": "Controller status",
+    "Noch nicht genug Daten für eine klare Diagnose.": "Not enough data yet for a clear diagnosis.",
+    "Die Regelung ist noch nicht am Zielwert angekommen.": "The controller has not yet reached the target value.",
+    "Die Regelung funktioniert bis zur Wallbox:": "The controller is working up to the wallbox:",
+    "Die Regelung funktioniert technisch.": "The controller is working technically.",
+    "Die Regelung sendet korrekt, wird aber von einem externen Limit ausgebremst:": "The controller is sending correct values but is limited by an external limit:",
+    "Die Regelung sendet korrekt": "The controller is sending correct values",
+    "Kein offensichtliches externes Stromlimit erkannt.": "No obvious external current limit detected.",
+    "Status": "Status",
+    "Hinweis": "Note",
+    "Leistung": "Power",
+    "Strom": "Current",
+    "Dynamischer Strom": "Dynamic current",
+    "Aktive Phase(n)": "Active phase(s)",
+    "Kein Strom wegen": "No current because",
+    "Lifetime": "Lifetime",
+    "Letzter Fahrzeug-Puls": "Last vehicle pulse",
+    "Neu verbinden erforderlich": "Reconnect required",
+    "Noch keine Easee-Login-Rohdaten.": "No Easee login raw data yet.",
+    "Noch keine MG-Login-Rohdaten.": "No MG login raw data yet.",
+    "Ladevorgang gestartet.": "Charging started.",
+    "Ladevorgang pausiert.": "Charging paused.",
+    "Ladevorgang gestoppt.": "Charging stopped.",
+    "Dynamischer Ladestrom gesetzt.": "Dynamic charging current set.",
+    "Phasenmodus gesetzt.": "Phase mode set.",
+    "Manuelles Laden aktiv:": "Manual charging active:"
   }
 };
 const originalTextNodes = new WeakMap();
@@ -268,6 +356,14 @@ async function api(path, options) {
 
 function setOutput(value) {
   document.getElementById("output").textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function setPanelOutput(id, value) {
+  const element = document.getElementById(id);
+  if (!element) {
+    return;
+  }
+  element.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 }
 
 function setFeedback(id, tone, message) {
@@ -666,6 +762,9 @@ function renderMgSummary(data) {
   const mg = data.mg || {};
   const status = mg.status || null;
   const settings = data.settings || {};
+  const mgErrorText = `${mg.error || ""} ${mg.fetchError || ""}`.toLowerCase();
+  const mgAuthRevoked = mgErrorText.includes("1100003") || mgErrorText.includes("revoked") || mgErrorText.includes("widerrufen");
+  const mgNoUsableData = mgErrorText.includes("keine verwertbaren fahrzeugdaten");
   const badges = [
     { label: settings.mg?.enabled ? "MG aktiv" : "MG inaktiv", tone: settings.mg?.enabled ? "ok" : "neutral" },
     { label: status?.vin || settings.mg?.vehicleId || "Keine VIN", tone: status?.vin || settings.mg?.vehicleId ? "ok" : "warn" },
@@ -678,14 +777,18 @@ function renderMgSummary(data) {
 
   if (!settings.mg?.enabled) {
     setFeedback("mg-feedback", "", "MG-Integration ist deaktiviert.");
+  } else if (mgAuthRevoked) {
+    setFeedback("mg-feedback", "warn", "MG ist angemeldet, aber der Zugriff auf das Fahrzeug ist abgelaufen oder wurde widerrufen. Bitte das Fahrzeug in der MG-App neu autorisieren und danach hier erneut verbinden.");
+  } else if (mg.error && mgNoUsableData) {
+    setFeedback("mg-feedback", "warn", "MG ist verbunden, liefert im Moment aber keine verwertbaren Fahrzeugdaten. Bitte Rohdaten pruefen und den Abruf erneut versuchen.");
   } else if (mg.error) {
-    setFeedback("mg-feedback", "error", mg.error);
+    setFeedback("mg-feedback", "error", `MG-Abruf fehlgeschlagen: ${mg.error}`);
   } else if (mg.fetchError) {
-    setFeedback("mg-feedback", "warn", `Letzter MG-Status aus Cache, neuer Abruf fehlgeschlagen: ${mg.fetchError}`);
+    setFeedback("mg-feedback", "warn", `MG zeigt den letzten bekannten Status. Ein neuer Abruf ist fehlgeschlagen: ${mg.fetchError}`);
   } else if (status) {
-    setFeedback("mg-feedback", "ok", `MG verbunden. Letzter Fahrzeugstatus: ${formatMgTimestamp(status.updatedAt)}.`);
+    setFeedback("mg-feedback", "ok", `MG verbunden. Fahrzeugdaten zuletzt aktualisiert: ${formatMgTimestamp(status.updatedAt)}.`);
   } else {
-    setFeedback("mg-feedback", "busy", "MG ist aktiviert, aber es liegen noch keine Fahrzeugdaten vor.");
+    setFeedback("mg-feedback", "busy", "MG ist aktiviert. Fahrzeugdaten werden gerade geladen.");
   }
 }
 
@@ -912,7 +1015,7 @@ function renderDiagnostics(data) {
     { label: "An Easee gesetzt", value: formatAmps(requestedCurrent) },
     { label: "Von Easee signalisiert", value: formatAmps(outputCurrent) },
     { label: "Vom Fahrzeug gezogen", value: formatAmps(measuredCurrent) },
-    { label: "Circuit-Freigabe", value: formatAmps(availableCurrent) },
+    { label: "Site-/Circuit-Limit", value: formatAmps(availableCurrent) },
     { label: "Letzter Regler-Eingriff", value: automation.lastAction || "-" },
     { label: "Reglerstatus", value: automation.state || "-" }
   ].map((item) => `<article class="stat"><strong>${item.label}</strong><span>${item.value}</span></article>`).join("");
@@ -935,8 +1038,8 @@ function renderDiagnostics(data) {
     if (measuredCurrent != null && measuredCurrent < requestedCurrent - 1) {
       setFeedback(
         "diagnostic-summary",
-        "busy",
-        `Die Regelung funktioniert bis zur Wallbox: gesetzt sind ${formatAmps(requestedCurrent)}, Easee signalisiert auch ${formatAmps(outputCurrent)} und die Circuit-Freigabe liegt bei ${formatAmps(availableCurrent)}. Das Fahrzeug zieht jedoch real nur ${formatAmps(measuredCurrent)}.`
+      "busy",
+      `Die Regelung funktioniert bis zur Wallbox: gesetzt sind ${formatAmps(requestedCurrent)}, Easee signalisiert auch ${formatAmps(outputCurrent)} und das externe Site-/Circuit-Limit liegt bei ${formatAmps(availableCurrent)}. Das Fahrzeug zieht jedoch real nur ${formatAmps(measuredCurrent)}.`
       );
       return;
     }
@@ -953,7 +1056,7 @@ function renderDiagnostics(data) {
     setFeedback(
       "diagnostic-summary",
       "error",
-      `Die Regelung sendet korrekt, wird aber von einem externen Limit ausgebremst: gesetzt sind ${formatAmps(requestedCurrent)}, die Circuit-Freigabe liegt jedoch nur bei ${formatAmps(availableCurrent)} und deshalb bleibt der reale Ladestrom bei ${formatAmps(outputCurrent)}.`
+      `Die Regelung sendet korrekt, wird aber von einem externen Limit ausgebremst: gesetzt sind ${formatAmps(requestedCurrent)}, das Site-/Circuit-Limit liegt jedoch nur bei ${formatAmps(availableCurrent)} und deshalb bleibt der reale Ladestrom bei ${formatAmps(outputCurrent)}.`
     );
     return;
   }
@@ -1080,7 +1183,7 @@ function renderEaseeSummary(data) {
     { label: "Leistung", value: formatWatts(easee.totalPowerWatts) },
     { label: "Strom", value: formatAmps(easee.outputCurrentAmp) },
     { label: "Dynamischer Strom", value: formatAmps(easee.dynamicChargerCurrentAmp) },
-    { label: "Circuit-Freigabe", value: allocatedCurrentLabel(easee.raw) },
+    { label: "Site-/Circuit-Limit", value: allocatedCurrentLabel(easee.raw) },
     { label: "Aktive Phase(n)", value: outputPhaseLabel(easee.raw?.outputPhase) },
     { label: "Kein Strom wegen", value: reasonForNoCurrentLabel(easee.reasonForNoCurrent) },
     { label: "Session", value: formatKwh(easee.sessionEnergyKwh) },
@@ -1510,10 +1613,15 @@ bindAction("easee-auth", async () => {
   if (result.selectedChargerId) {
     document.getElementById("easee-charger-id").value = result.selectedChargerId;
   }
+  setPanelOutput("easee-login-output", result);
   setOutput(result);
   await refreshDashboard();
 });
-bindAction("easee-status", async () => setOutput(await api("/api/integrations/easee/status")));
+bindAction("easee-status", async () => {
+  const result = await api("/api/integrations/easee/status");
+  setPanelOutput("easee-login-output", result);
+  setOutput(result);
+});
 bindAction("easee-discover", async () => discoverEaseeChargers());
 bindAction("mg-auth", async () => {
   const current = await api("/api/settings");
@@ -1536,15 +1644,21 @@ bindAction("mg-auth", async () => {
   if (result.warning) {
     setFeedback("mg-feedback", "warn", result.warning);
   }
+  setPanelOutput("mg-login-output", result);
   setOutput(result);
   await refreshDashboard();
 });
-bindAction("mg-status", async () => setOutput(await api("/api/integrations/mg/status")));
+bindAction("mg-status", async () => {
+  const result = await api("/api/integrations/mg/status");
+  setPanelOutput("mg-login-output", result);
+  setOutput(result);
+});
 bindAction("growatt-test", async () => setOutput(await api("/api/integrations/growatt/test")));
 bindAction("evaluate-control", async () => setOutput(await api("/api/control/evaluate", { method: "POST" })));
 bindAction("evaluate-control-verbose", async () => setOutput(await api("/api/control/evaluate", { method: "POST" })));
 bindAction("load-growatt-snapshots", async () => setOutput(await api("/api/snapshots?source=growatt&limit=10")));
 bindAction("load-easee-snapshots", async () => setOutput(await api("/api/snapshots?source=easee&limit=10")));
+bindAction("load-mg-status", async () => setOutput(await api("/api/integrations/mg/status")));
 bindActionGroup(
   ["easee-start", "easee-pause", "easee-stop", "easee-set-current", "easee-set-phase"],
   async (buttonId) => {
