@@ -1,3 +1,5 @@
+<meta name="author" content="Benjamin Voland">
+
 # Agent State
 
 State: 2026-08-16, after verified NAS deployment of PV calibration, physical

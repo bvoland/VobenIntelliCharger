@@ -1,3 +1,5 @@
+<meta name="author" content="Benjamin Voland">
+
 # VOBEN INTELLICHARGER
 
 Local controller for PV-optimized EV charging with a Growatt inverter, Easee
