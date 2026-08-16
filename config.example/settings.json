@@ -45,5 +45,36 @@
     "enabled": true,
     "targetBatterySocAtSunsetPercent": 90,
     "sunsetPreloadWindowMinutes": 120
+  },
+  "pvSystem": {
+    "installedPeakPowerWp": 14400,
+    "inverterRatedPowerW": 25000,
+    "maximumBatteryChargePowerW": 10000,
+    "maximumBatteryDischargePowerW": 10000,
+    "arrays": [
+      { "id": "south-east", "name": "Suedost", "peakPowerWp": 7200, "azimuthDeg": 135, "tiltDeg": 25, "moduleCount": 16, "modulePowerWp": 450, "stringCount": 1, "knownShading": "" },
+      { "id": "north-west", "name": "Nordwest", "peakPowerWp": 7200, "azimuthDeg": 315, "tiltDeg": 25, "moduleCount": 16, "modulePowerWp": 450, "stringCount": 1, "knownShading": "" }
+    ]
+  },
+  "calibration": {
+    "enabled": true,
+    "rawRetentionDays": 30,
+    "minimumIrradianceWm2": 50,
+    "minimumPvPowerW": 100,
+    "batteryPowerThresholdW": 75,
+    "chargerPowerThresholdW": 300,
+    "gridExportThresholdW": 75,
+    "maximumDataAgeSeconds": 90,
+    "maximumTimestampSkewSeconds": 90,
+    "aggregationIntervalMinutes": 15,
+    "modelUpdateIntervalMinutes": 60,
+    "minimumObservationCount": 20,
+    "archiveEnabled": true,
+    "archiveDirectory": "calibration",
+    "archiveFormat": "parquet",
+    "archiveSchedule": "daily",
+    "parquetCompression": "SNAPPY",
+    "outlierThreshold": 3.5,
+    "maximumModelChangePercent": 10
   }
 }

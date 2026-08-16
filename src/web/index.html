@@ -35,10 +35,12 @@
       .panel { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:1.25rem; margin-bottom:1rem; box-shadow:0 12px 30px rgba(0,0,0,.08);}
       .panel[hidden] { display:none; }
       body:has(#view-home:checked) .panel[data-view]:not([data-view="home"]),
+      body:has(#view-data:checked) .panel[data-view]:not([data-view="data"]),
       body:has(#view-config:checked) .panel[data-view]:not([data-view="config"]),
       body:has(#view-login:checked) .panel[data-view]:not([data-view="login"]),
       body:has(#view-debug:checked) .panel[data-view]:not([data-view="debug"]) { display:none; }
       body:has(#view-home:checked) .nav-item[data-view-target="home"],
+      body:has(#view-data:checked) .nav-item[data-view-target="data"],
       body:has(#view-config:checked) .nav-item[data-view-target="config"],
       body:has(#view-login:checked) .nav-item[data-view-target="login"],
       body:has(#view-debug:checked) .nav-item[data-view-target="debug"] { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -77,7 +79,18 @@
       .output-mini { margin-top:.85rem; max-height:220px; font-size:.85rem; }
       button.active-range { background:#1f2a2d; }
       #history-tooltip { position:absolute; background:rgba(31,42,45,.96); color:#f5efe8; border-radius:14px; padding:.6rem 1rem; font-size:.85rem; pointer-events:none; white-space:nowrap; z-index:10; box-shadow:0 4px 16px rgba(0,0,0,.35); display:none; line-height:1.55; }
+      .history-energy-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:.75rem; margin-top:.75rem; }
+      .history-energy-card { padding:.85rem 1rem; border:1px solid var(--line); border-radius:8px; background:#fff; }
+      .history-energy-card strong { display:block; color:var(--muted); font-size:.85rem; font-weight:600; }
+      .history-energy-card span { display:block; margin-top:.25rem; font-size:1.45rem; font-weight:700; }
+      .history-chart-svg { width:100%; height:auto; max-height:360px; display:block; }
       .muted { color:var(--muted); }
+      body:has(#view-data:checked) main { width:min(1500px,calc(100% - 2rem)); }
+      @media (orientation:landscape) {
+        body:has(#view-data:checked) main { width:calc(100% - 1.5rem); max-width:1600px; }
+        body:has(#view-data:checked) .panel[data-view="data"] { padding:1rem; }
+        body:has(#view-data:checked) .history-chart-svg { max-height:calc(100vh - 235px); }
+      }
       @media (max-width: 800px) {
         .hero-grid { grid-template-columns:1fr; }
         .app-title span { display:none; }
@@ -88,6 +101,7 @@
   <body>
     <input id="nav-open" type="checkbox" hidden>
     <input id="view-home" name="app-view" type="radio" value="home" hidden checked>
+    <input id="view-data" name="app-view" type="radio" value="data" hidden>
     <input id="view-config" name="app-view" type="radio" value="config" hidden>
     <input id="view-login" name="app-view" type="radio" value="login" hidden>
     <input id="view-debug" name="app-view" type="radio" value="debug" hidden>
@@ -115,6 +129,7 @@
       </div>
       <div class="nav-list">
         <label class="nav-item active" data-view-target="home" for="view-home"><span>Start</span><small>Bedienen</small></label>
+        <label class="nav-item" data-view-target="data" for="view-data"><span>Daten</span><small>Verlauf & Energie</small></label>
         <label class="nav-item" data-view-target="config" for="view-config"><span>Konfiguration</span><small>Regeln & Geräte</small></label>
         <label class="nav-item" data-view-target="login" for="view-login"><span>Logins</span><small>Easee & MG</small></label>
         <label class="nav-item" data-view-target="debug" for="view-debug"><span>Diagnose</span><small>Rohdaten</small></label>
@@ -131,6 +146,26 @@
           <button id="start-polling" class="secondary">Polling neu starten</button>
           <button id="stop-polling" class="secondary">Polling stoppen</button>
         </div>
+      </section>
+
+      <section class="panel" data-view="config">
+        <h2>PV-Anlage &amp; Kalibrierung</h2>
+        <p class="muted">Dachflächen unterstützen eine physikalische Prognose. Geschätzte Werte werden getrennt gespeichert und überschreiben diese Angaben nicht.</p>
+        <div class="grid">
+          <label class="field"><span>Installierte Gesamtleistung (Wp)</span><input id="pv-installed-wp" type="number" min="0"></label>
+          <label class="field"><span>Wechselrichter-Nennleistung (W)</span><input id="pv-inverter-w" type="number" min="0"></label>
+          <label class="field"><span>Max. Batterieladung (W)</span><input id="pv-battery-charge-w" type="number" min="0"></label>
+          <label class="field"><span>Max. Batterieentladung (W)</span><input id="pv-battery-discharge-w" type="number" min="0"></label>
+        </div>
+        <label class="field"><span>Dachflächen / Strings (JSON)</span><textarea id="pv-arrays-json" rows="10" spellcheck="false"></textarea></label>
+        <div class="grid">
+          <label class="field"><span>Rohdaten-Aufbewahrung (Tage)</span><input id="calibration-retention-days" type="number" min="1"></label>
+          <label class="field"><span>Min. Einstrahlung (W/m²)</span><input id="calibration-min-irradiance" type="number" min="0"></label>
+          <label class="field"><span>Min. PV-Leistung (W)</span><input id="calibration-min-pv" type="number" min="0"></label>
+          <label class="field"><span>Parquet-Archiv</span><select id="calibration-archive-enabled"><option value="true">Aktiv</option><option value="false">Inaktiv</option></select></label>
+        </div>
+        <div class="button-row"><button id="save-pv-settings">PV-Anlage speichern</button><button id="run-calibration-archive" class="secondary">Jetzt archivieren</button></div>
+        <div id="pv-settings-feedback" class="feedback">Noch keine Änderung gespeichert.</div>
       </section>
 
       <section class="panel" data-view="home">
@@ -378,7 +413,7 @@
         <div id="easee-action-feedback" class="feedback">Noch kein Wallbox-Befehl gesendet.</div>
       </section>
 
-      <section class="panel" data-view="home">
+      <section class="panel" data-view="data">
         <h2>Verlauf</h2>
         <p class="muted">PV-Leistung, Ladeleistung und Batterie-SOC der letzten Stunden.</p>
         <div class="button-row" id="history-range-buttons" style="margin-bottom:.5rem">
@@ -405,6 +440,16 @@
         <div style="position:relative">
           <div id="history-chart"></div>
           <div id="history-tooltip"></div>
+        </div>
+        <div id="history-energy-totals" class="history-energy-grid" aria-live="polite">
+          <div class="history-energy-card">
+            <strong>PV-Erzeugung im Zeitraum</strong>
+            <span id="history-pv-energy">-</span>
+          </div>
+          <div class="history-energy-card">
+            <strong>Fahrzeugladung im Zeitraum</strong>
+            <span id="history-charge-energy">-</span>
+          </div>
         </div>
       </section>
 

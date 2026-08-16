@@ -103,8 +103,8 @@ export class ChargingController {
     }
 
     if (settings.weather.enabled && weather?.dailyForecast?.length) {
-      const currentHour = new Date().getHours();
-      const currentPoint = weather.dailyForecast.find((p) => p.hour === currentHour);
+      const now = Date.now();
+      const currentPoint = weather.dailyForecast.find((p) => new Date(p.timestampUtc).getTime() >= now - 15 * 60_000);
       if (currentPoint && !currentPoint.isChargingWindow) {
         return {
           reason: "Ausserhalb des PV-Ladefensters",
@@ -372,8 +372,8 @@ export class ChargingController {
       return 0;
     }
 
-    const currentHour = new Date().getHours();
-    const currentPoint = weather.dailyForecast.find((point) => point.hour === currentHour);
+    const now = Date.now();
+    const currentPoint = weather.dailyForecast.find((point) => new Date(point.timestampUtc).getTime() >= now - 15 * 60_000);
     const predictedPvW = currentPoint?.predictedPvW;
     if (predictedPvW == null || predictedPvW <= 0) {
       return 0;

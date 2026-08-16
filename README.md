@@ -68,7 +68,9 @@ the process is interrupted during a save.
 
 ## Operating Logic
 
-- The home screen contains manual controls, Charge now, live values, weather, wallbox control, history, and system status.
+- The home screen contains manual controls, Charge now, live values, weather, wallbox control, and system status.
+- The separate Data menu contains the history graph, range controls, and energy totals. In landscape orientation, the view uses the available display width and scales the graph proportionally.
+- The history section shows total PV production and vehicle charging energy in kWh for the selected preset or custom time range. The totals use the same averaged time buckets as the displayed power graph, so missing buckets are not counted as generated or charged energy.
 - Configuration, login credentials, and debug output are separated into menu sections.
 - Easee and MG login panels now show their latest raw API/debug output directly below the connection controls.
 - The diagnostics section can explicitly load Growatt, Easee, and MG data.
@@ -97,6 +99,7 @@ Important endpoints:
 - `GET /api/settings`
 - `PUT /api/settings`
 - `GET /api/history?hours=12`
+- `GET /api/history?from=<ISO timestamp>&to=<ISO timestamp>`
 - `GET /api/snapshots?source=growatt|easee&limit=10`
 - `POST /api/control/evaluate`
 - `POST /api/control/manual-charge`
@@ -117,6 +120,7 @@ The embedded Growatt reader also exposes internal endpoints such as
 ## Build And Checks
 
 ```bash
+npm test
 npm run check
 npm run build
 npm start
@@ -162,9 +166,11 @@ real `config/settings.json`, real `config/easee.json`, `node_modules`, and local
 logs must stay out of the archive. Before replacing the runtime on the NAS,
 `config` and `data` are backed up to `backups/predeploy-...-config-data.tgz`.
 
-Last verified NAS state: backup
-`/volume1/docker/pv-charge-controller/backups/predeploy-20260602-221426-config-data.tgz`,
-health check `{"status":"ok"}`, container `running`, `RestartCount=0`.
+Last verified NAS state on 2026-08-16: backup
+`/volume1/docker/pv-charge-controller/backups/predeploy-20260816-190906-config-data.tgz`,
+health check `{"status":"ok"}`, container `running`, `RestartCount=0`,
+`OOMKilled=false`. The Data menu, landscape graph layout, and history energy totals
+were verified after deployment.
 
 ## Data Storage And Consolidation
 
@@ -187,3 +193,68 @@ stable for a while even though future growth pressure is reduced.
 - The automation pauses active charging only for protection reasons; passive reasons leave manually started sessions alone.
 - MG is connected through the embedded reader. Without enabled MG integration, PV/Easee control continues unchanged.
 - MG can report a successful account login while still rejecting vehicle access with code `1100003` if the vehicle authorization has expired or been revoked in the MG app.
+## PV calibration, forecast, and archive
+
+The controller uses the inverter's direct `live.pv_total_power_w` measurement for
+calibration. Battery discharge is never added to this value. A sample is accepted
+only during daylight with fresh, aligned and plausible inverter/weather data and
+when at least one unrestricted-production indicator is active: battery charging,
+battery discharging, vehicle charging, or actual grid export. Thresholds and raw
+retention are configured under `calibration` in `config/settings.json`.
+
+Open-Meteo is requested at 15-minute resolution for two days. Instantaneous GHI is
+used for comparison with the live inverter measurement; interval-average GHI,
+DNI and diffuse radiation are used for energy forecasts. `suncalc` supplies solar
+elevation and azimuth. For every configured array, radiation is transposed to the
+tilted plane (direct incidence, isotropic diffuse sky, and 20% ground albedo),
+then converted with array peak power, a temperature coefficient, system losses,
+and the inverter limit. Without array data, the previous generic 20 kWp behavior
+is retained as a low-confidence fallback.
+
+The compact model in SQLite uses robust median/MAD outlier rejection, recency and
+quality weighting, a maximum update step, and profiles by hour, solar position,
+month, season, weather, and irradiance band. Sparse profiles fall back to the
+global factor. Confidence combines sample/day/time/month coverage and dispersion.
+Configured plant values are never overwritten; learned peak power is explicitly
+reported as an estimate. A plant configuration change marks the model as needing
+validation.
+
+The forecast exposes theoretical/corrected power, interval energy, usable surplus,
+bounds, confidence, model version and data-gap state. Charging windows are chosen
+from the highest contiguous usable-surplus energy, not raw irradiance alone. Live
+safety limits (battery SOC/discharge and grid import) continue to take precedence.
+
+### SQLite migration and retention
+
+Startup creates these backward-compatible tables and indexes with `IF NOT EXISTS`:
+
+- `calibration_observations`: versioned rich raw samples, unique observation ID,
+  timestamp/model/archive indexes
+- `calibration_models`: compact versioned models and one active model
+- `calibration_aggregates`: reserved versioned compact interval profiles
+- `calibration_jobs`: last successful model/archive job and diagnostics
+
+Legacy `calibration_samples` remains readable. Rich observations are never deleted
+by generic cleanup. Only the archive service may delete them after a validated and
+atomically committed Parquet file exists.
+
+### Parquet archive
+
+Files are written under
+`data/calibration/raw/YYYY/MM/calibration_YYYY_MM_<UTC timestamp>.parquet` with
+Snappy compression and a sibling SHA-256 file. The stable schema version is stored
+in file metadata and in every row. Units are W, Wh, W/m², °C and degrees.
+
+The archive process selects expired, unarchived rows, deduplicates by the database
+primary key, writes a unique temporary file, reopens it with an independent reader,
+checks row count and every observation ID, atomically renames it, writes the
+checksum, marks rows archived, refreshes the compact model, and only then deletes
+confirmed rows. Any error before confirmation leaves raw rows intact. A restart can
+repeat the selection safely because archived state and unique IDs are persistent.
+
+Operational endpoints:
+
+- `GET /api/calibration/status`
+- `POST /api/calibration/model/update`
+- `POST /api/calibration/archive`
+- `POST /api/calibration/model/rebuild` (full rebuild from raw Parquet files)

@@ -2,8 +2,8 @@ let dashboardRefreshTimer = null;
 let currentLanguage = window.localStorage.getItem("pvcc-language") || "de";
 const languageLocales = { de: "de-DE", en: "en-US" };
 const viewLabelTranslations = {
-  de: { home: "Start", config: "Konfiguration", login: "Logins", debug: "Diagnose" },
-  en: { home: "Home", config: "Configuration", login: "Logins", debug: "Diagnostics" }
+  de: { home: "Start", data: "Daten", config: "Konfiguration", login: "Logins", debug: "Diagnose" },
+  en: { home: "Home", data: "Data", config: "Configuration", login: "Logins", debug: "Diagnostics" }
 };
 const viewLabels = viewLabelTranslations.de;
 const HISTORY_CHART_MAX_POWER_W = 15000;
@@ -17,6 +17,8 @@ const translations = {
     "Easee & MG": "Easee & MG",
     "Diagnose": "Diagnostics",
     "Rohdaten": "Raw data",
+    "Daten": "Data",
+    "Verlauf & Energie": "History & energy",
     "Menü": "Menu",
     "Sprache": "Language",
     "Status laden": "Load status",
@@ -122,6 +124,8 @@ const translations = {
     "Von": "From",
     "Bis": "To",
     "Zeitraum laden": "Load range",
+    "PV-Erzeugung im Zeitraum": "PV energy produced in range",
+    "Fahrzeugladung im Zeitraum": "Vehicle energy charged in range",
     "Systemstatus": "System status",
     "Letzte Snapshots": "Latest snapshots",
     "Growatt laden": "Load Growatt",
@@ -711,17 +715,13 @@ function renderWeather(data) {
   const phaseCount = data.settings?.rules?.phaseMode === "three" ? 3 : 1;
   const minChargingW = minAmps * 230 * phaseCount;
 
-  const calibLabel = w.calibrationSamples >= 20
-    ? `${w.calibrationSamples} Messungen (gut)`
-    : w.calibrationSamples >= 5
-      ? `${w.calibrationSamples} Messungen (aufbauend)`
-      : w.calibrationSamples > 0
-        ? `${w.calibrationSamples} Messungen (zu wenig)`
-        : "Noch keine Daten — Kalibrierung startet beim Laden";
+  const confidence = w.model?.confidence;
+  const calibLabel = `${w.calibrationSamples} gültige Messungen · ${confidence?.level ?? "low"} (${formatNumber((confidence?.value ?? 0) * 100, 0)} %)`;
 
-  const optimalWindow = (w.dailyForecast ?? []).filter((p) => p.isChargingWindow);
+  const today = new Date().toDateString();
+  const optimalWindow = (w.dailyForecast ?? []).filter((p) => p.isChargingWindow && new Date(p.timestampUtc).toDateString() === today);
   const windowText = optimalWindow.length
-    ? `${optimalWindow[0].hour}:00 – ${optimalWindow[optimalWindow.length - 1].hour + 1}:00 Uhr`
+    ? `${new Date(optimalWindow[0].timestampUtc).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} – ${new Date(new Date(optimalWindow[optimalWindow.length - 1].timestampUtc).getTime()+15*60000).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})} Uhr`
     : "Kein optimales Ladefenster heute";
 
   grid.innerHTML = [
@@ -730,8 +730,12 @@ function renderWeather(data) {
     { label: "Sonnenuntergang", value: sun ? formatTimestamp(sun.sunset) : "-" },
     { label: "Zeit bis Sonnenuntergang", value: minutesToSunset != null && minutesToSunset > 0 ? hoursToSunset : (sun ? "Sonne bereits untergegangen" : "-") },
     { label: "Strahlung jetzt", value: w.currentIrradianceWm2 != null ? `${formatNumber(w.currentIrradianceWm2, 0)} W/m²` : "-" },
-    { label: "Kalibrierungsfaktor", value: w.calibrationFactor != null ? `${formatNumber(w.calibrationFactor, 1)} W pro W/m²` : "-" },
+    { label: "Lernender Korrekturfaktor", value: w.calibrationFactor != null ? formatNumber(w.calibrationFactor, 3) : "-" },
     { label: "Kalibrierung", value: calibLabel },
+    { label: "Prognose Rest heute", value: `${formatNumber((w.todayEnergyWh ?? 0) / 1000, 1)} kWh` },
+    { label: "Prognose morgen", value: `${formatNumber((w.tomorrowEnergyWh ?? 0) / 1000, 1)} kWh` },
+    { label: "Geschätzte effektive Spitze", value: w.model?.estimatedEffectivePeakPowerW ? `${formatNumber(w.model.estimatedEffectivePeakPowerW, 0)} W (Schätzung)` : "Noch keine Schätzung" },
+    { label: "Aktive Modellversion", value: w.model?.version ?? "-" },
     { label: "Optimales Ladefenster", value: windowText }
   ].map((item) => `<article class="stat"><strong>${item.label}</strong><span>${item.value}</span></article>`).join("");
 
@@ -875,7 +879,7 @@ function buildHistoryChart(data) {
     return `<text x="${x}" y="${pt + ch + 22}" text-anchor="middle" font-size="11" fill="#68757a">${lbl}</text>`;
   }).join("");
 
-  return `<svg viewBox="0 0 ${vw} ${vh}" style="width:100%;max-height:260px;display:block" xmlns="http://www.w3.org/2000/svg">
+  return `<svg class="history-chart-svg" viewBox="0 0 ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg">
     ${yGridLeft}${yRight}${xLabels}
     <line x1="${pl}" y1="${pt}" x2="${pl}" y2="${pt + ch}" stroke="#aaa" stroke-width="1"/>
     <line x1="${pl + cw}" y1="${pt}" x2="${pl + cw}" y2="${pt + ch}" stroke="#aaa" stroke-width="1"/>
@@ -902,9 +906,19 @@ async function loadHistory() {
   const data = await api(url);
   lastHistoryData = data;
   document.getElementById("history-chart").innerHTML = buildHistoryChart(data);
+  renderHistoryEnergyTotals(data);
   applySeriesVisibility();
   setupHistoryChartInteraction();
   applyLanguageToDocument();
+}
+
+function renderHistoryEnergyTotals(data) {
+  const formatEnergy = (value) => Number.isFinite(value)
+    ? `${value.toLocaleString(getLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kWh`
+    : "-";
+
+  document.getElementById("history-pv-energy").textContent = formatEnergy(data?.energyTotals?.pvProducedKwh);
+  document.getElementById("history-charge-energy").textContent = formatEnergy(data?.energyTotals?.vehicleChargedKwh);
 }
 
 function setupHistoryChartInteraction() {
@@ -1227,6 +1241,15 @@ async function loadSettings() {
   setSelectValue("weather-enabled", settings.weather?.enabled !== false);
   document.getElementById("weather-target-soc").value = settings.weather?.targetBatterySocAtSunsetPercent ?? 90;
   document.getElementById("weather-preload-window").value = settings.weather?.sunsetPreloadWindowMinutes ?? 120;
+  document.getElementById("pv-installed-wp").value = settings.pvSystem?.installedPeakPowerWp ?? 0;
+  document.getElementById("pv-inverter-w").value = settings.pvSystem?.inverterRatedPowerW ?? 0;
+  document.getElementById("pv-battery-charge-w").value = settings.pvSystem?.maximumBatteryChargePowerW ?? 0;
+  document.getElementById("pv-battery-discharge-w").value = settings.pvSystem?.maximumBatteryDischargePowerW ?? 0;
+  document.getElementById("pv-arrays-json").value = JSON.stringify(settings.pvSystem?.arrays ?? [], null, 2);
+  document.getElementById("calibration-retention-days").value = settings.calibration?.rawRetentionDays ?? 30;
+  document.getElementById("calibration-min-irradiance").value = settings.calibration?.minimumIrradianceWm2 ?? 50;
+  document.getElementById("calibration-min-pv").value = settings.calibration?.minimumPvPowerW ?? 100;
+  setSelectValue("calibration-archive-enabled", settings.calibration?.archiveEnabled !== false);
   setSelectValue("mg-enabled", settings.mg?.enabled === true);
   document.getElementById("mg-api-base-url").value = settings.mg?.apiBaseUrl || "http://127.0.0.1:5002";
   document.getElementById("mg-username").value = settings.mg?.username || "";
@@ -1380,6 +1403,21 @@ async function saveSettings() {
     enabled: document.getElementById("weather-enabled").value === "true",
     targetBatterySocAtSunsetPercent: Number(document.getElementById("weather-target-soc").value),
     sunsetPreloadWindowMinutes: Number(document.getElementById("weather-preload-window").value)
+  };
+  current.pvSystem = {
+    ...current.pvSystem,
+    installedPeakPowerWp: Number(document.getElementById("pv-installed-wp").value),
+    inverterRatedPowerW: Number(document.getElementById("pv-inverter-w").value),
+    maximumBatteryChargePowerW: Number(document.getElementById("pv-battery-charge-w").value),
+    maximumBatteryDischargePowerW: Number(document.getElementById("pv-battery-discharge-w").value),
+    arrays: JSON.parse(document.getElementById("pv-arrays-json").value || "[]")
+  };
+  current.calibration = {
+    ...current.calibration,
+    rawRetentionDays: Number(document.getElementById("calibration-retention-days").value),
+    minimumIrradianceWm2: Number(document.getElementById("calibration-min-irradiance").value),
+    minimumPvPowerW: Number(document.getElementById("calibration-min-pv").value),
+    archiveEnabled: document.getElementById("calibration-archive-enabled").value === "true"
   };
   current.mg = {
     enabled: document.getElementById("mg-enabled").value === "true",
@@ -1548,6 +1586,8 @@ bindAction("load-settings", async () => setOutput(await loadSettings()));
 bindAction("save-settings", async () => saveSettings());
 bindAction("save-rules-settings", async () => saveSettings());
 bindAction("save-weather-settings", async () => saveSettings());
+bindAction("save-pv-settings", async () => saveSettings());
+bindAction("run-calibration-archive", async () => setOutput(await api("/api/calibration/archive", { method: "POST" })));
 bindAction("save-mg-settings", async () => saveSettings());
 
 function updateManualChargePreview() {

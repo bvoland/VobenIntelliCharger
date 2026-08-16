@@ -122,6 +122,15 @@ docker compose stop
 
 ## Last Verified NAS Status
 
+- Last verified deployment: 2026-08-16 around 19:09 Europe/Berlin.
+- Backup before deployment:
+  `/volume1/docker/pv-charge-controller/backups/predeploy-20260816-190906-config-data.tgz`
+- Container status after deployment:
+  `running`, `RestartCount=0`, `OOMKilled=false`, health endpoint returned `{"status":"ok"}`
+- Verified functions: calibration status API, history energy totals for PV production
+  and vehicle charging, separate Data navigation, and responsive landscape layout.
+- Changes deployed: physical PV forecasting and calibration, validated Parquet
+  archiving, selected-range kWh totals, and a dedicated Data view.
 - Last verified deployment: 2026-06-08 around 17:05 Europe/Berlin.
 - Backup before deployment:
   `/volume1/docker/pv-charge-controller/backups/predeploy-20260608-170458-config-data.tgz`

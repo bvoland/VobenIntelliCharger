@@ -15,6 +15,8 @@ import { AutomationService } from "./services/automationService";
 import { WeatherService } from "./services/weatherService";
 import { CleanupService } from "./services/cleanupService";
 import { MgClient } from "./integrations/mg/mgClient";
+import { PvCalibrationService } from "./services/pvCalibrationService";
+import { CalibrationArchiveService } from "./services/calibrationArchiveService";
 
 async function main(): Promise<void> {
   const baseDir = path.resolve(__dirname, "..");
@@ -35,7 +37,9 @@ async function main(): Promise<void> {
   const snapshotService = new SnapshotService(database);
   const cleanupService = new CleanupService(database);
   const chargingController = new ChargingController();
-  const weatherService = new WeatherService(settingsService, database);
+  const calibrationService = new PvCalibrationService(database);
+  const weatherService = new WeatherService(settingsService, database, calibrationService);
+  const archiveService = new CalibrationArchiveService(dataDir, settingsService, database, calibrationService);
   const pollingService = new PollingService(
     settingsService,
     growattClient,
@@ -63,6 +67,8 @@ async function main(): Promise<void> {
     chargingController,
     automationService,
     weatherService,
+    calibrationService,
+    archiveService,
     configStore
   });
 
@@ -73,6 +79,7 @@ async function main(): Promise<void> {
     automationService.stop();
     pollingService.stop();
     cleanupService.stop();
+    archiveService.stop();
     embeddedGrowattService.stop();
     embeddedMgService.stop();
     process.exit(0);
@@ -81,6 +88,7 @@ async function main(): Promise<void> {
     automationService.stop();
     pollingService.stop();
     cleanupService.stop();
+    archiveService.stop();
     embeddedGrowattService.stop();
     embeddedMgService.stop();
     process.exit(0);
@@ -88,6 +96,7 @@ async function main(): Promise<void> {
   await pollingService.start();
   await automationService.start();
   cleanupService.start();
+  archiveService.start();
   server.listen(port, host, () => {
     console.log(`VOBEN INTELLICHARGER listening on http://${host}:${port}`);
   });

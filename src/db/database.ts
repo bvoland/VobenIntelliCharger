@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { SnapshotRecord, SnapshotSource } from "../types/domain";
+import { CalibrationModel, CalibrationObservation, SnapshotRecord, SnapshotSource } from "../types/domain";
 
 export class AppDatabase {
   private readonly db: DatabaseSync;
@@ -41,6 +41,39 @@ export class AppDatabase {
       );
       CREATE INDEX IF NOT EXISTS idx_calibration_recorded_at
         ON calibration_samples (recorded_at DESC);
+      CREATE TABLE IF NOT EXISTS calibration_observations (
+        observation_id TEXT PRIMARY KEY,
+        timestamp_utc TEXT NOT NULL,
+        model_version TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0,
+        archive_path TEXT,
+        payload_json TEXT NOT NULL,
+        created_at_utc TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_calibration_observations_time ON calibration_observations(timestamp_utc);
+      CREATE INDEX IF NOT EXISTS idx_calibration_observations_archive ON calibration_observations(archived, timestamp_utc);
+      CREATE INDEX IF NOT EXISTS idx_calibration_observations_model ON calibration_observations(model_version);
+      CREATE TABLE IF NOT EXISTS calibration_models (
+        version TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 0,
+        payload_json TEXT NOT NULL,
+        created_at_utc TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_calibration_models_active ON calibration_models(active, created_at_utc DESC);
+      CREATE TABLE IF NOT EXISTS calibration_aggregates (
+        bucket_start_utc TEXT NOT NULL,
+        interval_minutes INTEGER NOT NULL,
+        model_version TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY(bucket_start_utc, interval_minutes, model_version)
+      );
+      CREATE TABLE IF NOT EXISTS calibration_jobs (
+        job_name TEXT PRIMARY KEY,
+        last_success_at_utc TEXT,
+        status TEXT NOT NULL,
+        details_json TEXT
+      );
     `);
   }
 
@@ -48,6 +81,8 @@ export class AppDatabase {
     await mkdir(baseDir, { recursive: true });
     return new AppDatabase(path.join(baseDir, "pv-charge-controller.db"));
   }
+
+  close(): void { this.db.close(); }
 
   insertSnapshot(source: SnapshotSource, capturedAt: string, payload: unknown): number {
     const stmt = this.db.prepare(
@@ -92,6 +127,77 @@ export class AppDatabase {
       "SELECT ratio FROM calibration_samples ORDER BY id DESC LIMIT ?"
     ).all(limit);
     return rows.map((r) => Number(r.ratio));
+  }
+
+  insertCalibrationObservation(observation: CalibrationObservation): boolean {
+    const result = this.db.prepare(`INSERT OR IGNORE INTO calibration_observations
+      (observation_id,timestamp_utc,model_version,archived,payload_json,created_at_utc)
+      VALUES (?,?,?,?,?,?)`).run(observation.observationId, observation.timestampUtc,
+        observation.modelVersion, observation.archived ? 1 : 0, JSON.stringify(observation), observation.createdAtUtc);
+    return Number(result.changes) === 1;
+  }
+
+  loadCalibrationObservations(limit = 5000): CalibrationObservation[] {
+    return this.db.prepare(`SELECT payload_json FROM calibration_observations ORDER BY timestamp_utc DESC LIMIT ?`)
+      .all(limit).map((row) => JSON.parse(String(row.payload_json)) as CalibrationObservation);
+  }
+
+  loadExpiredCalibrationObservations(cutoffUtc: string): CalibrationObservation[] {
+    return this.db.prepare(`SELECT payload_json FROM calibration_observations
+      WHERE timestamp_utc < ? AND archived = 0 ORDER BY timestamp_utc`).all(cutoffUtc)
+      .map((row) => JSON.parse(String(row.payload_json)) as CalibrationObservation);
+  }
+
+  markCalibrationArchived(ids: string[], archivePath: string): number {
+    if (ids.length === 0) return 0;
+    const stmt = this.db.prepare(`UPDATE calibration_observations SET archived=1, archive_path=? WHERE observation_id=?`);
+    let count = 0;
+    this.db.exec("BEGIN");
+    try { for (const id of ids) count += Number(stmt.run(archivePath, id).changes); this.db.exec("COMMIT"); }
+    catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    return count;
+  }
+
+  deleteArchivedCalibrationObservations(ids: string[]): number {
+    if (ids.length === 0) return 0;
+    const stmt = this.db.prepare(`DELETE FROM calibration_observations WHERE observation_id=? AND archived=1`);
+    let count = 0;
+    this.db.exec("BEGIN");
+    try { for (const id of ids) count += Number(stmt.run(id).changes); this.db.exec("COMMIT"); }
+    catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    return count;
+  }
+
+  saveCalibrationModel(model: CalibrationModel): void {
+    this.db.exec("BEGIN");
+    try {
+      this.db.prepare(`UPDATE calibration_models SET active=0 WHERE active=1`).run();
+      this.db.prepare(`INSERT OR REPLACE INTO calibration_models(version,status,active,payload_json,created_at_utc) VALUES(?,?,1,?,?)`)
+        .run(model.version, model.status, JSON.stringify(model), model.updatedAtUtc);
+      this.db.exec("COMMIT");
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+
+  loadActiveCalibrationModel(): CalibrationModel | null {
+    const row = this.db.prepare(`SELECT payload_json FROM calibration_models WHERE active=1 ORDER BY created_at_utc DESC LIMIT 1`).get();
+    return row ? JSON.parse(String(row.payload_json)) as CalibrationModel : null;
+  }
+
+  setCalibrationJobStatus(jobName: string, status: string, details: unknown, successful = false): void {
+    this.db.prepare(`INSERT INTO calibration_jobs(job_name,last_success_at_utc,status,details_json) VALUES(?,?,?,?)
+      ON CONFLICT(job_name) DO UPDATE SET last_success_at_utc=CASE WHEN ? THEN excluded.last_success_at_utc ELSE calibration_jobs.last_success_at_utc END,status=excluded.status,details_json=excluded.details_json`)
+      .run(jobName, successful ? new Date().toISOString() : null, status, JSON.stringify(details), successful ? 1 : 0);
+  }
+
+  getCalibrationStats(): { rawRows: number; archivedRows: number; lastArchiveUtc: string | null } {
+    const rows = this.db.prepare(`SELECT COUNT(*) total, SUM(archived) archived FROM calibration_observations`).get()!;
+    const job = this.db.prepare(`SELECT last_success_at_utc FROM calibration_jobs WHERE job_name='archive'`).get();
+    return { rawRows: Number(rows.total), archivedRows: Number(rows.archived ?? 0), lastArchiveUtc: job ? String(job.last_success_at_utc) : null };
+  }
+
+  upsertCalibrationAggregate(bucketStartUtc:string,intervalMinutes:number,modelVersion:string,payload:unknown):void {
+    this.db.prepare(`INSERT OR REPLACE INTO calibration_aggregates(bucket_start_utc,interval_minutes,model_version,payload_json) VALUES(?,?,?,?)`)
+      .run(bucketStartUtc,intervalMinutes,modelVersion,JSON.stringify(payload));
   }
 
   insertControlDecision(payload: unknown): void {
@@ -190,9 +296,9 @@ export class AppDatabase {
       `DELETE FROM weather_fetches WHERE fetched_at < datetime('now', '-90 days')`
     );
 
-    const deleteOldCalibration = this.db.prepare(
-      `DELETE FROM calibration_samples WHERE recorded_at < datetime('now', '-90 days')`
-    );
+    // Legacy samples remain bounded; rich observations are removed only by the
+    // archive service after a successfully validated Parquet write.
+    const deleteOldCalibration = this.db.prepare(`DELETE FROM calibration_samples WHERE recorded_at < datetime('now', '-90 days')`);
 
     let consolidatedRows = 0;
     let deletedRawRows = 0;

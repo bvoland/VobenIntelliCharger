@@ -13,6 +13,9 @@ import { WeatherService } from "../services/weatherService";
 import { SettingsService } from "../config/settingsService";
 import { AppDatabase } from "../db/database";
 import { MAX_EASEE_CURRENT_AMPS, MIN_EASEE_CURRENT_AMPS } from "../config/chargingLimits";
+import { calculateBucketEnergyKwh } from "../services/historyEnergyService";
+import { PvCalibrationService } from "../services/pvCalibrationService";
+import { CalibrationArchiveService } from "../services/calibrationArchiveService";
 
 export function createApp(deps: {
   baseDir: string;
@@ -26,6 +29,8 @@ export function createApp(deps: {
   automationService: AutomationService;
   weatherService: WeatherService;
   configStore: ConfigStore;
+  calibrationService: PvCalibrationService;
+  archiveService: CalibrationArchiveService;
 }) {
   const app = express();
   app.use(express.json({ limit: "2mb" }));
@@ -112,15 +117,31 @@ export function createApp(deps: {
         enabled: z.boolean(),
         targetBatterySocAtSunsetPercent: z.number().min(0).max(100),
         sunsetPreloadWindowMinutes: z.number().int().min(0).max(480)
+      }),
+      pvSystem: z.object({
+        installedPeakPowerWp: z.number().min(0), inverterRatedPowerW: z.number().min(0),
+        maximumBatteryChargePowerW: z.number().min(0), maximumBatteryDischargePowerW: z.number().min(0),
+        arrays: z.array(z.object({ id:z.string().min(1),name:z.string().min(1),peakPowerWp:z.number().positive(),azimuthDeg:z.number().min(0).lt(360),tiltDeg:z.number().min(0).max(90),moduleCount:z.number().int().positive(),modulePowerWp:z.number().positive(),stringCount:z.number().int().positive(),knownShading:z.string() }))
+      }),
+      calibration: z.object({
+        enabled:z.boolean(),rawRetentionDays:z.number().int().min(1),minimumIrradianceWm2:z.number().min(0),minimumPvPowerW:z.number().min(0),batteryPowerThresholdW:z.number().min(0),chargerPowerThresholdW:z.number().min(0),gridExportThresholdW:z.number().min(0),maximumDataAgeSeconds:z.number().int().min(1),maximumTimestampSkewSeconds:z.number().int().min(1),aggregationIntervalMinutes:z.number().int().min(1),modelUpdateIntervalMinutes:z.number().int().min(1),minimumObservationCount:z.number().int().min(1),archiveEnabled:z.boolean(),archiveDirectory:z.string().min(1).refine(value=>!path.isAbsolute(value)&&!value.split(/[\\/]/).includes(".."),"Archivpfad muss relativ und innerhalb des Datenverzeichnisses sein."),archiveFormat:z.literal("parquet"),archiveSchedule:z.string(),parquetCompression:z.enum(["SNAPPY","UNCOMPRESSED"]),outlierThreshold:z.number().positive(),maximumModelChangePercent:z.number().min(0).max(100)
       })
     });
 
     const parsed = schema.parse(req.body);
     const current = await deps.settingsService.getSettings();
     const next = mergeMgPassword(parsed, current);
+    const validationErrors = deps.calibrationService.validateSystem(next);
+    if (validationErrors.length) { res.status(400).json({ message: "PV-Anlagenkonfiguration ist unplausibel.", errors: validationErrors }); return; }
     await deps.settingsService.saveSettings(next);
+    if (JSON.stringify(current.pvSystem) !== JSON.stringify(next.pvSystem)) deps.calibrationService.markNeedsValidation(next.pvSystem.installedPeakPowerWp);
     res.json({ success: true, settings: sanitizeSettings(next) });
   });
+
+  app.get("/api/calibration/status", async (_req,res)=>{const settings=await deps.settingsService.getSettings();res.json({model:deps.calibrationService.getModel(),systemValidation:deps.calibrationService.validateSystem(settings),database:deps.database.getCalibrationStats()});});
+  app.post("/api/calibration/model/update", async (_req,res)=>res.json(deps.calibrationService.updateModel(await deps.settingsService.getSettings())));
+  app.post("/api/calibration/archive", async (_req,res)=>res.json(await deps.archiveService.runNow()));
+  app.post("/api/calibration/model/rebuild", async (_req,res)=>res.json(await deps.archiveService.rebuildModelFromArchive()));
 
   app.get("/api/integrations/growatt/test", async (_req, res) => {
     const settings = await deps.settingsService.getSettings();
@@ -246,7 +267,7 @@ export function createApp(deps: {
     const latest = deps.pollingService.getLatestData();
     const growatt = latest.growatt ?? deps.database.listSnapshots("growatt", 1)[0]?.payload ?? null;
     const easee = latest.easee ?? deps.database.listSnapshots("easee", 1)[0]?.payload ?? null;
-    const weather = await deps.weatherService.getContext().catch(() => null);
+    const weather = await deps.weatherService.getContext(growatt as never).catch(() => null);
     const mg = await deps.mgClient.getVehicleStatus(settings).catch((error) => ({
       configured: settings.mg.enabled,
       error: error instanceof Error ? error.message : String(error)
@@ -329,13 +350,20 @@ export function createApp(deps: {
     const growatt = deps.database.queryHistoryGrowatt(fromIso);
     const easee = deps.database.queryHistoryEasee(fromIso);
 
+    const pvPowerW = downsample(growatt, "pvPowerW");
+    const chargingPowerW = downsample(easee, "powerW");
+
     res.json({
       timeRange: { from: fromIso, to: new Date(toMs).toISOString(), hours: Math.round(hours) },
-      pvPowerW: downsample(growatt, "pvPowerW"),
+      energyTotals: {
+        pvProducedKwh: calculateBucketEnergyKwh(pvPowerW, bucketMs),
+        vehicleChargedKwh: calculateBucketEnergyKwh(chargingPowerW, bucketMs)
+      },
+      pvPowerW,
       socPercent: downsample(growatt, "socPercent"),
       batteryChargeW: downsample(growatt, "chargeW"),
       batteryDischargeW: downsample(growatt, "dischargeW"),
-      chargingPowerW: downsample(easee, "powerW"),
+      chargingPowerW,
       chargingCurrentA: downsample(easee, "currentA")
     });
   });
@@ -377,7 +405,7 @@ export function createApp(deps: {
     const status = await deps.automationService.runNow();
     const settings = await deps.settingsService.getSettings();
     const latest = deps.pollingService.getLatestData();
-    const weather = await deps.weatherService.getContext().catch(() => null);
+    const weather = await deps.weatherService.getContext(latest.growatt).catch(() => null);
     const mg = await deps.mgClient.getVehicleStatus(settings).catch(() => null);
     const decision = deps.chargingController.evaluate(settings, latest.growatt, latest.easee, weather, mg?.status ?? null);
     res.json({

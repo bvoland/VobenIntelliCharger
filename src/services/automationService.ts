@@ -90,16 +90,12 @@ export class AutomationService {
     const latest = this.pollingService.getLatestData();
     const growatt = latest.growatt;
     const easee = latest.easee;
-    const weather = await this.weatherService.getContext().catch(() => null);
+    const weather = await this.weatherService.getContext(growatt).catch(() => null);
     const mg = await this.mgClient.getVehicleStatus(settings).catch(() => null);
     const decision = this.chargingController.evaluate(settings, growatt, easee, weather, mg?.status ?? null);
 
-    // Kalibrierung nur wenn Wechselrichter nicht gedrosselt wird:
-    // Batterie lädt aktiv (PV hat freien Abfluss) ODER Auto lädt (PV-Strom wird direkt genutzt)
-    const isFreePv =
-      (growatt?.battery?.charge_power_w ?? 0) > 50 ||
-      easee?.charging === true;
-    this.weatherService.recordObservation(growatt?.live?.pv_total_power_w ?? 0, isFreePv);
+    // Direkte PV-Messung; Batteriefluss ist ausschließlich Freigabekriterium.
+    this.weatherService.recordObservation(growatt, easee, weather);
     this.lastDecision = decision;
     this.lastEvaluatedAt = new Date().toISOString();
 
